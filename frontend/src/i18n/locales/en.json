@@ -1,0 +1,308 @@
+{
+  "brand": { "name": "AgentScope" },
+  "nav": {
+    "chat": "Chat",
+    "sessions": "Sessions",
+    "agents": "Agents",
+    "skills": "Skills",
+    "mcp": "MCP",
+    "credentials": "Credentials",
+    "schedules": "Schedules",
+    "logs": "Logs",
+    "settings": "Settings",
+    "users": "Users",
+    "signOut": "Sign out"
+  },
+  "login": {
+    "subtitle": "Sign in to continue",
+    "username": "Username",
+    "usernamePlaceholder": "admin",
+    "password": "Password",
+    "button": { "signIn": "Sign in", "signingIn": "Signing in…" },
+    "error": { "invalidCredentials": "Invalid username or password" }
+  },
+  "common": {
+    "button": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "edit": "Edit",
+      "add": "Add",
+      "create": "Create",
+      "run": "Run",
+      "dismiss": "Dismiss"
+    },
+    "status": { "loading": "Loading…", "saving": "Saving…" },
+    "pagination": {
+      "prev": "← Previous",
+      "next": "Next →",
+      "total": "{{count}} total"
+    },
+    "validation": { "required": "Required" },
+    "confirm": { "deletePrompt": "Delete {{name}}?" },
+    "error": { "unknown": "Unknown error", "requestFailed": "Request failed" },
+    "empty": { "noDataHint": "No data" }
+  },
+  "chat": {
+    "picker": {
+      "title": "Select an agent",
+      "subtitle": "Pick an agent to start the conversation",
+      "searchPlaceholder": "Search agent name…",
+      "noMatch": "No matching agents"
+    },
+    "attach": {
+      "button": "Attach",
+      "limit": "Max 5MB per file",
+      "tooLarge": "{{name}} exceeds 5MB",
+      "unsupported": "{{name}} unsupported (images & text files only)"
+    },
+    "skill": {
+      "button": "Skill",
+      "prompt": "Use skill \"{{name}}\"",
+      "injectFailed": "Skill inject failed: {{error}}",
+      "picker": {
+        "title": "Select a skill",
+        "subtitle": "Pick a skill to invoke (bound first)",
+        "searchPlaceholder": "Search skill name…",
+        "bound": "Bound",
+        "noMatch": "No matching skills"
+      }
+    },
+    "empty": {
+      "noAgents": "No agents yet",
+      "noAgentsHint": "Create an agent to start chatting.",
+      "noAgentsAdminHint": "Ask your administrator to create an agent and assign it to you.",
+      "selectAgent": "Select an agent to begin",
+      "configureModel": "Configure a model to start chatting",
+      "sendMessage": "Send a message to start"
+    },
+    "status": { "loadingModelConfig": "Loading model configuration…" },
+    "button": { "createAgent": "Create Agent", "agent": "Agent", "send": "Send" },
+    "warning": {
+      "noModel": "No model configured. Go to ",
+      "goToAgentsEdit": "Agents → Edit",
+      "noModelTail": " to select a model."
+    },
+    "error": { "mcpFailedToLoad": "MCP failed to load: " },
+    "placeholder": {
+      "loadingModel": "Loading model…",
+      "selectAgent": "Select an agent first",
+      "configureModel": "Configure a model first",
+      "message": "Message… (Enter to send)",
+      "selectAgentOption": "Select agent…"
+    }
+  },
+  "sessions": {
+    "title": "Sessions",
+    "filter": { "allAgents": "All agents" },
+    "empty": { "noSessions": "No sessions yet. Start a conversation in Chat." },
+    "button": { "resume": "Resume", "resumeTitle": "Continue this conversation" },
+    "confirm": { "delete": "Delete this session?" },
+    "dialog": { "rename": "Rename Session" }
+  },
+  "agents": {
+    "title": "Agents",
+    "dialog": { "new": "New Agent", "edit": "Edit Agent" },
+    "form": {
+      "name": "Name",
+      "systemPrompt": "System Prompt",
+      "modelConfig": "Model Configuration",
+      "credential": "Credential",
+      "model": "Model",
+      "noModel": "No model",
+      "selectModel": "Select model…"
+    },
+    "dualList": {
+      "available": "Available",
+      "selected": "Selected",
+      "allSelected": "All selected",
+      "noMatch": "No match",
+      "none": "None"
+    },
+    "config": {
+      "title": "Agent Configuration",
+      "mcpServers": "MCP Servers",
+      "skills": "Skills",
+      "emptyMcp": "No MCP servers yet. Register them on the MCP page.",
+      "emptySkillsNoPaths": "No skills yet. Go to Settings → Skill Paths to configure directories.",
+      "emptySkillsAllDisabled": "All skills are disabled. Enable them in the Skills menu before configuring."
+    },
+    "button": {
+      "new": "+ New Agent",
+      "chat": "Chat",
+      "startChatTitle": "Start chat with this agent",
+      "configTitle": "Configure Skills & MCPs"
+    },
+    "confirm": { "delete": "Delete {{name}}?" },
+    "empty": { "noAgents": "No agents yet. Create one to get started." }
+  },
+  "skills": {
+    "title": "Skills",
+    "hint": { "pathManagement": "Path management → Settings" },
+    "search": { "placeholder": "Search skill…", "count": "{{count}} item(s)" },
+    "badge": { "enabled": "Enabled", "disabled": "Disabled" },
+    "empty": {
+      "noSkills": "No skills yet. Add a path in Settings → Skill Paths.",
+      "noMatch": "No matching results."
+    }
+  },
+  "mcp": {
+    "title": "MCP Servers",
+    "button": { "register": "+ Register", "testing": "Testing…", "test": "Test" },
+    "empty": { "noServers": "No MCP servers registered." },
+    "dialog": { "register": "Register MCP Server" },
+    "form": {
+      "namePlaceholder": "Name (unique)",
+      "commandPlaceholder": "Command (e.g. npx)",
+      "argsPlaceholder": "Args (space-separated)",
+      "urlPlaceholder": "URL"
+    },
+    "test": {
+      "probingStdio": "Probing… (stdio may take up to 30s)",
+      "probing": "Probing…",
+      "success": "Connected · {{count}} tools available",
+      "failed": "Failed: {{message}}"
+    },
+    "card": {
+      "loadingTools": "Loading tools{{suffix}}…",
+      "failedToLoad": "Failed to load: {{message}}",
+      "noTools": "No tools exposed.",
+        "stdioNote": " (stdio may take up to 30s)"
+    }
+  },
+  "credentials": {
+    "title": "Credentials",
+    "button": { "add": "+ Add" },
+    "confirm": { "delete": "Delete credential?" },
+    "empty": { "noCredentials": "No credentials. Add an API key to get started." },
+    "dialog": { "add": "Add Credential" },
+    "form": {
+      "provider": "Provider",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "sk-…",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "http://localhost:11434"
+    },
+    "card": {
+      "models": "Models",
+      "customSuffix": " (custom)",
+      "badge": { "default": "default" },
+      "setDefault": "Set default",
+      "emptyModels": "No models found. Add a custom model below.",
+      "customModelPlaceholder": "Custom model name…"
+    }
+  },
+  "schedules": {
+    "title": "Schedules",
+    "button": { "new": "+ New", "run": "Run", "runNowTitle": "Run now" },
+    "badge": { "enabled": "Enabled", "disabled": "Disabled" },
+    "confirm": { "delete": "Delete schedule?" },
+    "empty": { "noSchedules": "No schedules configured." },
+    "dialog": { "new": "New Schedule", "modelHint": "Model configuration is read from the agent automatically." },
+    "form": {
+      "agent": "Agent",
+      "selectAgent": "Select Agent…",
+      "name": "Name",
+      "namePlaceholder": "Schedule name",
+      "description": "Description (optional)",
+      "descriptionPlaceholder": "What does this schedule do",
+      "cronExpression": "Cron expression",
+      "cronHelp": "Default: every Mon–Fri 09:00 · Format: min hour day month weekday",
+      "timezone": "Timezone"
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "error": { "failedToLoad": "Failed to load logs." },
+    "empty": { "noMatch": "No lines match the filter." }
+  },
+  "settings": {
+    "title": "Settings",
+    "tab": { "settings": "Settings", "redis": "Redis Data" },
+    "section": {
+      "account": "Account",
+      "appearance": "Appearance",
+      "skillPaths": "Skill Paths",
+      "backend": "Backend"
+    },
+    "account": { "signedInAs": "Signed in as " },
+    "skillPaths": {
+      "help": "Configure the skill root directory. Each subdirectory containing a SKILL.md file is a skill. Changes require a backend restart to take effect.",
+      "empty": "No skill directory configured.",
+      "placeholder": "/path/to/skills",
+      "discovered": "{{count}} skill(s) discovered"
+    },
+    "backend": {
+      "restartHelp": "Restart the backend to apply config changes (Skill paths, MCP, etc.) immediately. In-progress conversations will be interrupted.",
+      "restart": "Restart backend",
+      "restarting": "Backend is restarting, please wait…",
+      "restartTimeout": "Restart timed out. Please check the backend status manually.",
+      "restartComplete": "Restart complete ✓",
+      "restartFailed": "Restart request failed"
+    }
+  },
+  "users": {
+    "title": "Users",
+    "button": { "new": "+ New User" },
+    "card": { "agents": "Agents: " },
+    "confirm": { "delete": "Delete {{name}}?" },
+    "empty": { "noUsers": "No users. Create one to grant access." },
+    "dialog": { "new": "New User", "edit": "Edit {{name}}" },
+    "form": {
+      "usernamePlaceholder": "Username",
+      "passwordPlaceholder": "Password",
+      "passwordPlaceholderEdit": "New password (blank = keep)",
+      "roleUser": "User",
+      "roleAdmin": "Admin",
+      "boundAgents": "Bound Agents",
+      "emptyAgents": "No agents yet."
+    }
+  },
+  "redis": {
+    "title": "Redis Data",
+    "searchPlaceholder": "key pattern, e.g. agentscope:user:webui:*",
+    "refresh": "Refresh",
+    "empty": {
+      "keys": "No matching keys",
+      "noSelection": "Select a key on the left to view its data"
+    },
+    "detail": {
+      "type": "Type",
+      "ttl": "TTL",
+      "size": "Size",
+      "ttlPermanent": "permanent",
+      "truncated": "…(truncated)"
+    },
+    "page": {
+      "prev": "Prev",
+      "next": "Next",
+      "size": "Per page",
+      "pageOf": "Page {{page}} / {{pages}}",
+      "pageOnly": "Page {{page}}",
+      "noMore": "No more"
+    },
+    "type": {
+      "string": "STRING",
+      "list": "LIST",
+      "set": "SET",
+      "hash": "HASH",
+      "zset": "ZSET",
+      "stream": "STREAM"
+    }
+  },
+  "term": {
+    "provider": {
+      "dashscope": "DashScope",
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "deepseek": "DeepSeek",
+      "gemini": "Gemini",
+      "xai": "xAI",
+      "moonshot": "Moonshot",
+      "ollama": "Ollama"
+    },
+    "transport": { "stdio": "stdio", "sse": "SSE", "streamableHttp": "Streamable HTTP" },
+    "logLevel": { "all": "All", "error": "ERROR", "warn": "WARN", "info": "INFO", "debug": "DEBUG" },
+    "source": { "app": "App", "service": "Service" }
+  }
+}

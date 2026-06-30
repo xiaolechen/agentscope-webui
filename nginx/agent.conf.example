@@ -1,0 +1,100 @@
+# AgentScope Web UI — Nginx config template for a single public domain
+#
+# This is a PORTABLE template (HTTP-only). Copy to agent.conf and customize
+# the domain, then let certbot obtain the Let's Encrypt cert and rewrite it:
+#
+#   cp nginx/agent.conf.example nginx/agent.conf
+#   # edit server_name to your domain
+#   sudo ln -sf "$PWD/nginx/agent.conf" /etc/nginx/conf.d/agent.conf
+#   sudo nginx -t && sudo nginx -s reload
+#   sudo certbot --nginx -d <your-domain> --redirect \
+#       --non-interactive --agree-tos --register-unsafely-without-email
+#
+# certbot's nginx plugin will obtain the cert (public CA, no self-signed) and
+# rewrite agent.conf to add the 443 ssl server block + 80→443 redirect (lines
+# it owns are marked `# managed by Certbot`). Do not edit those managed lines.
+# Renewal is automatic via certbot.timer.
+#
+# Prereqs: DNS A record → this server's public IP; security group open on
+# 80 (HTTP-01 challenge) and 443.
+#
+# URL routing (after SSL is active):
+#   https://<domain>/                       → Frontend (Vite :5173)
+#   https://<domain>/api/*                  → Backend :8000 (strip /api)
+#   https://<domain>/sessions/{id}/stream   → Backend :8000 (SSE, direct)
+#   https://<domain>/docs                   → Backend :8000 (Swagger UI)
+#
+# Why single-domain path routing (no frontend change needed):
+#   The axios client uses baseURL '/api' (api/client.ts), so every normal API
+#   call (auth, chat trigger, webui data, session CRUD) lands under /api/* and
+#   is routed to the backend with the prefix stripped. The ONLY call that
+#   bypasses /api is the SSE stream (useSSEStream.ts strips /api and connects
+#   directly to /sessions/{id}/stream to dodge Vite's compression buffering).
+#   That one path is routed to the backend with proxy_buffering off. The
+#   /sessions page route is exact '/sessions' (no trailing slash), so it does
+#   NOT match the '/sessions/' prefix below and still goes to Vite.
+
+server {
+    listen 80;
+    server_name agent.david007.vip;   # ← edit to your domain
+
+    # ── Backend API: /api/* → :8000 (strip /api prefix) ──────────────────────
+    # /api/auth/login → /auth/login, /api/chat/ → /chat/, etc.
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── SSE stream: /sessions/{id}/stream → :8000 (direct, no /api prefix) ───
+    # useSSEStream.ts builds ${origin}/sessions/{id}/stream to bypass Vite.
+    # proxy_buffering off is mandatory for real-time event delivery.
+    # Prefix (not regex) so certbot's nginx parser stays happy. The exact
+    # '/sessions' page route doesn't match this (needs trailing slash).
+    location /sessions/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400s;
+        proxy_buffering off;
+    }
+
+    # ── API docs / schema → :8000 ────────────────────────────────────────────
+    location = /openapi.json {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /docs {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /redoc {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── Frontend → Vite :5173 ────────────────────────────────────────────────
+    location / {
+        proxy_pass http://127.0.0.1:5173;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        # Forward Host: localhost so Vite's allowedHosts (DNS-rebinding guard)
+        # doesn't block the public domain.
+        proxy_set_header Host localhost;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

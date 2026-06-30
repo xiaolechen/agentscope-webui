@@ -1,0 +1,19 @@
+[project]
+name = "agentscope-webui-backend"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    # agentscope is resolved from local path via [tool.uv.sources] below,
+    # not from PyPI. Version constraint here is informational only.
+    "agentscope[full]>=2.0.3",
+    "uvicorn",
+    "python-dotenv",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "python-multipart",
+]
+
+[tool.uv.sources]
+# Uses the local sibling agentscope repo as an editable install.
+# Remove this section to fall back to PyPI.
+agentscope = { path = "../agentscope", editable = true }

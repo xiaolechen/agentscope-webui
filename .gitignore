@@ -1,0 +1,37 @@
+node_modules
+dist
+.vite
+# macOS metadata
+._*
+.DS_Store
+.env
+.env.local
+# Build artifacts
+tsconfig.tsbuildinfo
+tsconfig.node.tsbuildinfo
+# Runtime
+.pids
+.venv
+.venv/
+workspaces/
+/logs/
+# Python cache
+__pycache__/
+*.pyc
+# Design docs (internal planning)
+docs/plans/
+
+# Production-only scripts (machine-specific, not for the repo)
+start-prod.sh
+stop-prod.sh
+
+# Prod PID dir
+.pids-prod/
+
+# Claude Code session/local settings
+.claude/
+
+# Live nginx config — certbot rewrites this in place (adds # managed by
+# Certbot ssl lines + cert paths specific to this deployment). The portable
+# HTTP-only template ships as nginx/agent.conf.example instead.
+nginx/agent.conf
