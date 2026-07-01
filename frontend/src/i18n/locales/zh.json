@@ -73,7 +73,8 @@
       "noAgentsAdminHint": "请联系管理员创建 Agent 并分配给你。",
       "selectAgent": "选择一个 Agent 开始",
       "configureModel": "请先配置模型再开始对话",
-      "sendMessage": "发送一条消息开始对话"
+      "sendMessage": "发送一条消息开始对话",
+      "presetHint": "选择一个预设问题开始对话"
     },
     "status": { "loadingModelConfig": "正在加载模型配置…" },
     "button": { "createAgent": "创建 Agent", "agent": "Agent", "send": "发送" },
@@ -105,6 +106,10 @@
     "form": {
       "name": "名称",
       "systemPrompt": "系统提示词",
+      "presetQuestions": "预设问题",
+      "presetQuestionsHint": "对话开始时展示，点击即可发起对话（最多 5 个）",
+      "addQuestion": "+ 添加问题",
+      "questionPlaceholder": "例如：帮我分析这段代码的性能",
       "modelConfig": "模型配置",
       "credential": "凭证",
       "model": "模型",

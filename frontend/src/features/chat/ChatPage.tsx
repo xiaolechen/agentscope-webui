@@ -66,6 +66,15 @@ export default function ChatPage() {
   })
   const enabledBoundSkills = (boundSkills as SkillDef[]).filter(s => s.is_enabled)
 
+  // Preset questions for this agent — shown as clickable chips in the empty
+  // state to guide the user. Clicking one sends it as the first message.
+  const { data: presetQuestions = [] } = useQuery({
+    queryKey: ['agent-questions', agentId],
+    queryFn: () => webuiApi.getAgentQuestions(agentId!),
+    enabled: !!agentId,
+  })
+  const questions = (presetQuestions as string[]).filter(Boolean)
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, sseState.streaming])
 
   // Merge SSE text chunks into assistant message
@@ -411,7 +420,20 @@ export default function ChatPage() {
             {!agentId ? t('chat.empty.selectAgent')
               : modelLoading ? t('chat.status.loadingModelConfig')
               : noModelWarning ? t('chat.empty.configureModel')
-              : t('chat.empty.sendMessage')}
+              : questions.length ? (
+                <div className="flex flex-col items-center gap-3 max-w-lg w-full">
+                  <span className="text-xs" style={{ color: 'var(--as-ink-48)' }}>{t('chat.empty.presetHint')}</span>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {questions.map((q, i) => (
+                      <button key={i} onClick={() => sendText(q)}
+                        className="text-sm px-3 py-1.5 rounded-[var(--as-r-sm)] transition-colors hover:bg-[var(--as-parchment)]"
+                        style={{ border: '1px solid var(--as-hairline)', color: 'var(--as-ink)' }}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : t('chat.empty.sendMessage')}
           </div>
         )}
         {messages.map(m => (

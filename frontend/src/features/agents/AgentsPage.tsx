@@ -36,6 +36,7 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
 
   const [selectedCredId, setSelectedCredId] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
+  const [questions, setQuestions] = useState<string[]>([])
 
   const { data: credentials = [] } = useQuery({ queryKey: ['credentials'], queryFn: credentialsApi.list })
   const { data: existingModel } = useQuery({
@@ -43,6 +44,15 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
     queryFn: () => webuiApi.getAgentModel(agent!.id),
     enabled: !!agent,
   })
+  const { data: existingQuestions } = useQuery({
+    queryKey: ['agent-questions', agent?.id],
+    queryFn: () => webuiApi.getAgentQuestions(agent!.id),
+    enabled: !!agent,
+  })
+
+  useEffect(() => {
+    if (Array.isArray(existingQuestions)) setQuestions(existingQuestions as string[])
+  }, [existingQuestions])
 
   useEffect(() => {
     if ((existingModel as any)?.credential_id) {
@@ -85,6 +95,9 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
         parameters: {},
       })
     }
+    if (savedId) {
+      await webuiApi.setAgentQuestions(savedId, questions)
+    }
     onSaved()
   }
 
@@ -106,6 +119,34 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {inp(t('agents.form.name'), 'name')}
           {inp(t('agents.form.systemPrompt'), 'system_prompt', true)}
+
+          <div className="border-t pt-3" style={{ borderColor: 'var(--as-hairline)' }}>
+            <p className="text-sm font-medium mb-1" style={{ color: 'var(--as-ink-80)' }}>{t('agents.form.presetQuestions')}</p>
+            <p className="text-xs mb-2" style={{ color: 'var(--as-ink-48)' }}>{t('agents.form.presetQuestionsHint')}</p>
+            <div className="space-y-2">
+              {questions.map((q, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={q}
+                    onChange={e => setQuestions(prev => prev.map((x, j) => j === i ? e.target.value : x))}
+                    placeholder={t('agents.form.questionPlaceholder')}
+                    className="as-input flex-1"
+                  />
+                  <button type="button" onClick={() => setQuestions(prev => prev.filter((_, j) => j !== i))}
+                    className="as-btn as-btn-ghost as-btn-sm" style={{ padding: '4px' }}>
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              {questions.length < 5 && (
+                <button type="button" onClick={() => setQuestions(prev => [...prev, ''])}
+                  className="text-xs px-2 py-1 border rounded"
+                  style={{ borderColor: 'var(--as-hairline)', color: 'var(--as-ink-80)' }}>
+                  {t('agents.form.addQuestion')}
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="border-t pt-3" style={{ borderColor: 'var(--as-hairline)' }}>
             <p className="text-sm font-medium mb-2" style={{ color: 'var(--as-ink-80)' }}>{t('agents.form.modelConfig')}</p>

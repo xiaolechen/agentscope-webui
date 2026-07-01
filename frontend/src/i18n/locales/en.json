@@ -73,7 +73,8 @@
       "noAgentsAdminHint": "Ask your administrator to create an agent and assign it to you.",
       "selectAgent": "Select an agent to begin",
       "configureModel": "Configure a model to start chatting",
-      "sendMessage": "Send a message to start"
+      "sendMessage": "Send a message to start",
+      "presetHint": "Pick a preset question to start"
     },
     "status": { "loadingModelConfig": "Loading model configuration…" },
     "button": { "createAgent": "Create Agent", "agent": "Agent", "send": "Send" },
@@ -105,6 +106,10 @@
     "form": {
       "name": "Name",
       "systemPrompt": "System Prompt",
+      "presetQuestions": "Preset Questions",
+      "presetQuestionsHint": "Shown when a chat starts — click to send (max 5)",
+      "addQuestion": "+ Add Question",
+      "questionPlaceholder": "e.g. Analyze the performance of this code",
       "modelConfig": "Model Configuration",
       "credential": "Credential",
       "model": "Model",

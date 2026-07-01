@@ -300,6 +300,23 @@ async def set_agent_skills(agent_id: str, body: list = Body(...), _: UserInDB = 
     return body
 
 
+# ── Per-agent preset questions ────────────────────────────────────────────────
+# Suggested prompts shown in the chat empty-state to guide users. Stored as a
+# JSON string array, same pattern as agent-mcps/agent-skills.
+
+@router.get("/agent-questions/{agent_id}")
+async def get_agent_questions(agent_id: str, _: UserInDB = Depends(require_agent_access)):
+    return _get_list(f"webui:config:agent-questions:{agent_id}")
+
+
+@router.put("/agent-questions/{agent_id}")
+async def set_agent_questions(agent_id: str, body: list = Body(...), _: UserInDB = Depends(require_agent_access)):
+    # Keep only non-empty, trimmed strings; cap at 5 to avoid UI clutter.
+    cleaned = [q.strip() for q in body if isinstance(q, str) and q.strip()][:5]
+    _set_list(f"webui:config:agent-questions:{agent_id}", cleaned)
+    return cleaned
+
+
 @router.get("/agent-skills-full/{agent_id}")
 async def get_agent_skills_full(agent_id: str, user: UserInDB = Depends(require_agent_access)):
     """Return the agent's bound skills as full skill objects ({name, path, is_enabled}).

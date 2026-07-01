@@ -67,6 +67,12 @@ export const webuiApi = {
   setAgentSkills: (agentId: string, paths: string[]) =>
     apiClient.put(`/webui/agent-skills/${agentId}`, paths).then(r => r.data),
 
+  // Per-agent preset questions — suggested prompts shown in the chat empty-state.
+  getAgentQuestions: (agentId: string): Promise<string[]> =>
+    apiClient.get(`/webui/agent-questions/${agentId}`).then(r => r.data),
+  setAgentQuestions: (agentId: string, questions: string[]) =>
+    apiClient.put(`/webui/agent-questions/${agentId}`, questions).then(r => r.data),
+
   // Inject a single skill into an active session (chat skill-picker, non-bound skill)
   injectSessionSkill: (agentId: string, sessionId: string, skillPath: string) =>
     apiClient.post('/webui/session-skill', { agent_id: agentId, session_id: sessionId, skill_path: skillPath }).then(r => r.data),
