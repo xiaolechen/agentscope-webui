@@ -41,10 +41,12 @@ for _n in ("uvicorn", "uvicorn.access", "uvicorn.error"):
 
 # ── AgentScope app ────────────────────────────────────────────────────────────
 import uvicorn
+from fastapi import Depends
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
 
 from agentscope.app import create_app, SubAgentTemplate
+from agentscope.app.deps import get_current_user_id
 from agentscope.app.message_bus import RedisMessageBus
 from agentscope.app.storage import RedisStorage
 from agentscope.app.workspace_manager import LocalWorkspaceManager
@@ -106,11 +108,22 @@ app = create_app(
     ],
 )
 
+# ── Close the unauthenticated-agentscope-endpoint hole (S1) ───────────────────
+# agentscope's get_current_user_id only checks that the X-User-ID header is
+# non-empty, so /credential/*, /sessions/*, /chat/, /workspace/*, /schedule/*,
+# /agent/*, /knowledge-base/* would otherwise accept any caller that spoofs the
+# header — exposing every API key in plaintext and allowing session hijacking.
+# Replace it app-wide with JWT auth; the override returns the shared "webui"
+# namespace so the existing resource model (shared namespace + webui RBAC on
+# /webui/*) is preserved. See auth_router.webui_user_id.
+
 # ── Auth & Users routers ──────────────────────────────────────────────────────
 import auth_router
 import users_router
 import webui_router
 import redis_browser_router
+
+app.dependency_overrides[get_current_user_id] = auth_router.webui_user_id
 
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
@@ -118,7 +131,9 @@ app.include_router(webui_router.router)
 app.include_router(redis_browser_router.router)
 
 # ── Log viewer endpoint ───────────────────────────────────────────────────────
-@app.get("/logs/{source}")
+# Admin-only: backend logs may contain JWT tokens, user IDs, and error stack
+# traces — must not be exposed to unauthenticated or non-admin callers.
+@app.get("/logs/{source}", dependencies=[Depends(auth_router.admin_required)])
 async def get_logs(source: str):
     if source == "service":
         # Use the most recently modified console log — not today's date,
@@ -138,7 +153,10 @@ async def get_logs(source: str):
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        # Default to loopback: agentscope native endpoints are now JWT-gated,
+        # but exposing the port broadly increases attack surface. Set
+        # BACKEND_HOST=0.0.0.0 only behind a reverse proxy that terminates auth.
+        host=os.getenv("BACKEND_HOST", "127.0.0.1"),
         port=int(os.getenv("BACKEND_PORT", "8000")),
         reload=True,
         reload_dirs=[str(_BACKEND_DIR)],

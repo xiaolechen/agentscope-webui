@@ -5,14 +5,25 @@ import json, logging, os, secrets, uuid
 
 # Suppress passlib/bcrypt version-check warning (bcrypt 4.x removed __about__)
 logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(32))
+# Fail fast if JWT_SECRET is unset: a random per-restart secret would invalidate
+# all tokens on every restart (and diverge across workers), silently logging out
+# users. Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+_jwt_secret = os.getenv("JWT_SECRET")
+if not _jwt_secret:
+    raise RuntimeError(
+        "JWT_SECRET is not set. Add it to .env (generate with: "
+        'python -c "import secrets; print(secrets.token_hex(32))"). '
+        "Run 'bash setup.sh' to initialize, or see .env.example."
+    )
+SECRET_KEY = _jwt_secret
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
 
@@ -61,6 +72,36 @@ def save_user(user: UserInDB):
     r.sadd("webui:users:all", user.id)
 
 
+# ── Login rate limiting (Redis-backed) ────────────────────────────────────────
+# Brute-force protection on /auth/login. Counts attempts per client IP within a
+# fixed window; rejects with 429 once the threshold is exceeded.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 60
+
+
+def _login_rate_key(ip: str) -> str:
+    return f"webui:login-rate:{ip}"
+
+
+def check_login_rate(ip: str) -> None:
+    """Raise 429 once an IP exceeds LOGIN_MAX_ATTEMPTS within the window."""
+    key = _login_rate_key(ip)
+    r = _r()
+    count = r.incr(key)
+    if count == 1:
+        r.expire(key, LOGIN_WINDOW_SECONDS)
+    if count > LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please try again later.",
+        )
+
+
+def reset_login_rate(ip: str) -> None:
+    """Clear the counter after a successful login (don't penalise success)."""
+    _r().delete(_login_rate_key(ip))
+
+
 def hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
 
@@ -76,11 +117,17 @@ def create_token(data: dict) -> str:
 
 def _bootstrap_admin():
     """Create default admin on first run."""
+    admin_pw = os.getenv("ADMIN_PASSWORD", "admin123")
+    if admin_pw == "admin123":
+        logger.warning(
+            "ADMIN_PASSWORD is using the default 'admin123'. "
+            "Change it in .env before production use."
+        )
     if not get_user("admin"):
         user = UserInDB(
             id=str(uuid.uuid4()),
             username="admin",
-            hashed_password=hash_password(os.getenv("ADMIN_PASSWORD", "admin123")),
+            hashed_password=hash_password(admin_pw),
             role="admin",
         )
         save_user(user)
@@ -116,13 +163,33 @@ async def admin_required(user: UserInDB = Depends(current_user)) -> UserInDB:
     return user
 
 
+# ── AgentScope native-endpoint auth override ─────────────────────────────────
+# agentscope's get_current_user_id (agentscope/app/deps.py) only checks that the
+# X-User-ID header is non-empty — anyone reachable on the port could supply it
+# and read every credential / session / chat stream in the shared "webui"
+# namespace (API keys are returned in plaintext). We override that dependency
+# app-wide (see main.py) so a valid webui JWT is required. On success we return
+# the shared namespace "webui" so agentscope's resource model (single shared
+# namespace, webui RBAC layered on top in /webui/*) is preserved and the
+# client-supplied X-User-ID header can no longer be spoofed.
+async def webui_user_id(user: UserInDB = Depends(current_user)) -> str:
+    """JWT-gated replacement for agentscope's get_current_user_id.
+
+    Returns the shared namespace ``"webui"`` after verifying the caller's JWT.
+    """
+    return "webui"
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=Token)
-async def login(form: OAuth2PasswordRequestForm = Depends()):
+async def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
+    client_ip = request.client.host if request.client else "unknown"
+    check_login_rate(client_ip)
     user = get_user(form.username)
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
+    reset_login_rate(client_ip)
     token = create_token({"sub": user.id, "role": user.role})
     return Token(access_token=token, token_type="bearer", role=user.role, user_id=user.id)
 

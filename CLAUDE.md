@@ -71,10 +71,14 @@ PATCH session（注入 model config） → POST /chat/（触发）→ start()（
 
 **原因**：没有 model config 的 session，后端接受 chat trigger（200）但静默失败，stream 为空。
 
-### 4. x-user-id 是固定值
-`src/api/client.ts` 的拦截器固定发送 `x-user-id: webui`。
+### 4. x-user-id 是固定值，但 agentscope 端点已 JWT 鉴权
+`src/api/client.ts` 的拦截器固定发送 `x-user-id: webui`，**且所有请求都带 `Authorization: Bearer <JWT>`**。
 
 **原因**：所有资源（Agent、Session、Credential）在 agentscope 里共享同一个命名空间，webui 自己的 RBAC 层在上面做权限控制。
+
+**关键**：agentscope 原生的 `get_current_user_id`（`agentscope/app/deps.py`）只检查 `X-User-ID` 头非空——任何人都能伪造。`backend/main.py` 用 `app.dependency_overrides[get_current_user_id] = auth_router.webui_user_id` **全局替换成 JWT 鉴权**：必须带有效 webui JWT 才放行，通过后服务端覆写为共享命名空间 `"webui"`（客户端伪造的头不再可信）。这保护了 `/credential/*`、`/sessions/*`、`/chat/`、`/workspace/*`、`/schedule/*`、`/agent/*`、`/knowledge-base/*`。新增 agentscope 端点默认也受保护。
+
+后端默认绑 `127.0.0.1`（`BACKEND_HOST` 环境变量，默认 loopback）；需要外网暴露时设 `BACKEND_HOST=0.0.0.0` 且必须放反代后面。
 
 ---
 
@@ -140,7 +144,7 @@ npm run build --prefix frontend  # 生产构建（TypeScript 检查 + Vite）
 | Workspace `.mcp` 文件 | 修改 `default_mcps` 后，需手动删除 `workspaces/*/` 下的 `.mcp` 文件，否则旧配置仍生效 |
 | 新 session 响应慢 | 通常是 workspace 初始化 MCP 导致。确认 `backend/main.py` 的 `default_mcps = []` |
 | SSE 无输出 | 检查：1) Session 有 model config？2) `x-user-id` header 发送了？3) SSE URL 直连后端（非 proxy）？ |
-| 422 on stream | 大概率是 `x-user-id` header 缺失，stream 端点必填 |
+| 422 on stream | 大概率是 JWT 缺失（`Authorization: Bearer`），stream 端点现在 JWT 鉴权（依赖 override） |
 | 模型调用 409 | Session 正在处理中，用户重复发消息。前端应在 `sseState.streaming = true` 时禁用发送 |
 
 ---

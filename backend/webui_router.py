@@ -82,6 +82,26 @@ def _set_list(key: str, value: list):
     _r().set(key, json.dumps(value))
 
 
+# ── Access control ────────────────────────────────────────────────────────────
+
+async def require_agent_access(
+    agent_id: str,
+    user: UserInDB = Depends(current_user),
+) -> UserInDB:
+    """Verify the calling user owns the agent (admin bypasses).
+
+    agentscope uses a shared `x-user-id: webui` namespace, so webui's RBAC
+    layer must enforce agent ownership here. Without this check, any
+    authenticated user could read or overwrite any other user's agent
+    model/MCP/skill config (horizontal privilege escalation).
+    """
+    if user.role == "admin":
+        return user
+    if agent_id not in user.bound_agent_ids:
+        raise HTTPException(403, f"No access to agent '{agent_id}'")
+    return user
+
+
 # ── Session ownership tracking ────────────────────────────────────────────────
 
 def _session_key(user_id: str) -> str:
@@ -93,8 +113,35 @@ async def track_session(body: dict, user: UserInDB = Depends(current_user)):
     """Record that this user owns a session. Called right after session creation."""
     session_id = body.get("session_id", "").strip()
     agent_id = body.get("agent_id", "").strip()
-    if session_id and agent_id:
-        _r().sadd(_session_key(user.id), f"{agent_id}:{session_id}")
+    if not (session_id and agent_id):
+        raise HTTPException(400, "session_id and agent_id required")
+
+    # Enforce agent ownership (admin bypasses).
+    if user.role != "admin" and agent_id not in user.bound_agent_ids:
+        raise HTTPException(403, f"No access to agent '{agent_id}'")
+
+    # Verify the session actually exists in agentscope before claiming ownership.
+    # NOTE: agentscope uses a shared `x-user-id: webui` namespace, so we cannot
+    # prove THIS user created the session — only that it exists for the agent.
+    # True ownership attribution requires proxying session creation through webui
+    # so the backend can authoritatively record the owner (see C5 in CR notes).
+    headers = {"x-user-id": "webui"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            f"{AGENTSCOPE_BASE}/sessions/",
+            params={"agent_id": agent_id},
+            headers=headers,
+        )
+    if not resp.is_success:
+        raise HTTPException(404, f"Agent '{agent_id}' not found")
+    sessions = resp.json().get("sessions", [])
+    exists = any((s.get("session") or {}).get("id") == session_id for s in sessions)
+    if not exists:
+        raise HTTPException(
+            404, f"Session '{session_id}' not found for agent '{agent_id}'"
+        )
+
+    _r().sadd(_session_key(user.id), f"{agent_id}:{session_id}")
     return {"ok": True}
 
 
@@ -131,39 +178,41 @@ async def delete_default_model(user: UserInDB = Depends(current_user)):
 # ── Per-agent model config ────────────────────────────────────────────────────
 
 @router.get("/agent-model/{agent_id}")
-async def get_agent_model(agent_id: str, _: UserInDB = Depends(current_user)):
+async def get_agent_model(agent_id: str, _: UserInDB = Depends(require_agent_access)):
     return _get_json(f"webui:config:agent-model:{agent_id}") or {}
 
 
 @router.put("/agent-model/{agent_id}")
-async def set_agent_model(agent_id: str, config: ChatModelConfig, _: UserInDB = Depends(current_user)):
+async def set_agent_model(agent_id: str, config: ChatModelConfig, _: UserInDB = Depends(require_agent_access)):
     _set_json(f"webui:config:agent-model:{agent_id}", config.model_dump())
     return config
 
 
 @router.delete("/agent-model/{agent_id}", status_code=204)
+async def delete_agent_model(agent_id: str, _: UserInDB = Depends(require_agent_access)):
+    _r().delete(f"webui:config:agent-model:{agent_id}")
 
 
 # ── Per-agent MCP & Skill preferences ────────────────────────────────────────
 
 @router.get("/agent-mcps/{agent_id}")
-async def get_agent_mcps(agent_id: str, _: UserInDB = Depends(current_user)):
+async def get_agent_mcps(agent_id: str, _: UserInDB = Depends(require_agent_access)):
     return _get_list(f"webui:config:agent-mcps:{agent_id}")
 
 
 @router.put("/agent-mcps/{agent_id}")
-async def set_agent_mcps(agent_id: str, body: list = Body(...), _: UserInDB = Depends(current_user)):
+async def set_agent_mcps(agent_id: str, body: list = Body(...), _: UserInDB = Depends(require_agent_access)):
     _set_list(f"webui:config:agent-mcps:{agent_id}", body)
     return body
 
 
 @router.get("/agent-skills/{agent_id}")
-async def get_agent_skills(agent_id: str, _: UserInDB = Depends(current_user)):
+async def get_agent_skills(agent_id: str, _: UserInDB = Depends(require_agent_access)):
     return _get_list(f"webui:config:agent-skills:{agent_id}")
 
 
 @router.put("/agent-skills/{agent_id}")
-async def set_agent_skills(agent_id: str, body: list = Body(...), _: UserInDB = Depends(current_user)):
+async def set_agent_skills(agent_id: str, body: list = Body(...), _: UserInDB = Depends(require_agent_access)):
     _set_list(f"webui:config:agent-skills:{agent_id}", body)
     return body
 
@@ -308,11 +357,12 @@ async def inject_session_skill(body: dict, _: UserInDB = Depends(current_user)):
     return {"ok": True}
 
 
-async def delete_agent_model(agent_id: str, _: UserInDB = Depends(current_user)):
-    _r().delete(f"webui:config:agent-model:{agent_id}")
-
-
 # ── Credential custom models ──────────────────────────────────────────────────
+# TODO(C4): credentials have no user-binding in the webui layer (unlike agents'
+# `bound_agent_ids`), so ownership cannot be enforced here. These endpoints only
+# store display metadata (model-name lists), not secrets — but for true multi-
+# tenant isolation, add `bound_credential_ids` to UserInDB and gate these the
+# same way as the agent-scoped endpoints above.
 
 @router.get("/cred-models/{cred_id}")
 async def get_cred_models(cred_id: str, _: UserInDB = Depends(current_user)):
