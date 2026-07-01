@@ -62,9 +62,8 @@
       "injectFailed": "Skill inject failed: {{error}}",
       "picker": {
         "title": "Select a skill",
-        "subtitle": "Pick a skill to invoke (bound first)",
+        "subtitle": "Pick a skill bound to this agent to invoke",
         "searchPlaceholder": "Search skill name…",
-        "bound": "Bound",
         "noMatch": "No matching skills"
       }
     },
@@ -139,11 +138,22 @@
   "skills": {
     "title": "Skills",
     "hint": { "pathManagement": "Path management → Settings" },
+    "button": { "add": "+ Add Skill" },
     "search": { "placeholder": "Search skill…", "count": "{{count}} item(s)" },
     "badge": { "enabled": "Enabled", "disabled": "Disabled" },
     "empty": {
       "noSkills": "No skills yet. Add a path in Settings → Skill Paths.",
       "noMatch": "No matching results."
+    },
+    "dialog": { "install": "Add Skill" },
+    "install": {
+      "targetDir": "Install directory",
+      "placeholder": "npx skills add https://github.com/vercel-labs/skills --skill find-skills",
+      "running": "Installing… (npx may need to download)",
+      "success": "Added {{names}}",
+      "failed": "Failed: {{message}}",
+      "noSkillFound": "Command finished but no new SKILL.md was found",
+      "noDirs": "No skill directories registered. Add one in Settings → Skill Paths first."
     }
   },
   "mcp": {
@@ -153,9 +163,23 @@
     "dialog": { "register": "Register MCP Server" },
     "form": {
       "namePlaceholder": "Name (unique)",
+      "transport": "Transport",
       "commandPlaceholder": "Command (e.g. npx)",
       "argsPlaceholder": "Args (space-separated)",
-      "urlPlaceholder": "URL"
+      "stateful": "Stateful (keep process alive)",
+      "urlPlaceholder": "URL",
+      "stdioAdminOnly": "stdio runs commands on the server host — admin only."
+    },
+    "auth": {
+      "title": "Authentication",
+      "method": "Method",
+      "none": "None",
+      "bearer": "Bearer Token",
+      "apiKey": "API Key",
+      "oauth": "OAuth",
+      "tokenPlaceholder": "Token / Key",
+      "headerNamePlaceholder": "Header name (default: X-API-Key)",
+      "oauthHint": "Enter the OAuth access token. Refresh is not managed by this app."
     },
     "test": {
       "probingStdio": "Probing… (stdio may take up to 30s)",

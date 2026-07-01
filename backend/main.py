@@ -130,6 +130,10 @@ app.include_router(users_router.router)
 app.include_router(webui_router.router)
 app.include_router(redis_browser_router.router)
 
+# Migrate per-admin MCP/skill config into the shared `admin` namespace so all
+# admins see one library. Idempotent — no-op on boots after the first.
+webui_router.migrate_admin_shared_namespace()
+
 # ── Log viewer endpoint ───────────────────────────────────────────────────────
 # Admin-only: backend logs may contain JWT tokens, user IDs, and error stack
 # traces — must not be exposed to unauthenticated or non-admin callers.

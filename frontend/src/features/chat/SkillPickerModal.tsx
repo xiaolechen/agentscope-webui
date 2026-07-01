@@ -7,28 +7,19 @@ const PAGE = 10
 
 interface Props {
   skills: SkillDef[]
-  boundPaths: string[]
   onPick: (skill: SkillDef) => void
   onClose: () => void
 }
 
-export default function SkillPickerModal({ skills, boundPaths, onPick, onClose }: Props) {
+export default function SkillPickerModal({ skills, onPick, onClose }: Props) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
 
-  const boundSet = useMemo(() => new Set(boundPaths), [boundPaths])
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const list = q ? skills.filter(s => s.name.toLowerCase().includes(q)) : [...skills]
-    // Bound skills first (stable within each group)
-    return list.sort((a, b) => {
-      const ab = boundSet.has(a.path) ? 0 : 1
-      const bb = boundSet.has(b.path) ? 0 : 1
-      return ab - bb
-    })
-  }, [skills, query, boundSet])
+    return q ? skills.filter(s => s.name.toLowerCase().includes(q)) : [...skills]
+  }, [skills, query])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE))
   const safePage = Math.min(page, totalPages - 1)
@@ -63,26 +54,17 @@ export default function SkillPickerModal({ skills, boundPaths, onPick, onClose }
         </div>
 
         <div className="space-y-1 max-h-80 overflow-y-auto">
-          {paged.map(s => {
-            const bound = boundSet.has(s.path)
-            return (
-              <button
-                key={s.path}
-                onClick={() => onPick(s)}
-                className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-[var(--as-r-sm)] transition-colors hover:bg-[var(--as-parchment)]"
-                style={{ border: '1px solid var(--as-hairline)' }}
-              >
-                <Wand2 size={15} style={{ color: 'var(--as-primary)' }} />
-                <span className="text-sm font-medium truncate" style={{ color: 'var(--as-ink)' }}>{s.name}</span>
-                {bound && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
-                    style={{ background: 'var(--as-divider)', color: 'var(--as-ink-80)' }}>
-                    {t('chat.skill.picker.bound')}
-                  </span>
-                )}
-              </button>
-            )
-          })}
+          {paged.map(s => (
+            <button
+              key={s.path}
+              onClick={() => onPick(s)}
+              className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-[var(--as-r-sm)] transition-colors hover:bg-[var(--as-parchment)]"
+              style={{ border: '1px solid var(--as-hairline)' }}
+            >
+              <Wand2 size={15} style={{ color: 'var(--as-primary)' }} />
+              <span className="text-sm font-medium truncate" style={{ color: 'var(--as-ink)' }}>{s.name}</span>
+            </button>
+          ))}
           {filtered.length === 0 && (
             <p className="text-sm text-center py-6" style={{ color: 'var(--as-ink-48)' }}>
               {t('chat.skill.picker.noMatch')}

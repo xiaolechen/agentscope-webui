@@ -7,13 +7,20 @@ export interface ChatModelConfig {
   parameters: Record<string, unknown>
 }
 
+export type McpTransport = 'stdio' | 'sse' | 'streamable-http'
+export type McpAuthType = 'none' | 'bearer' | 'api_key' | 'oauth'
+
 export interface McpDef {
   name: string
-  transport: string
+  transport: McpTransport
   command: string
   args: string[]
   url: string
+  is_stateful: boolean
   is_enabled: boolean
+  auth_type: McpAuthType
+  auth_token: string
+  auth_header_name: string
 }
 
 export interface SkillDef {
@@ -53,6 +60,10 @@ export const webuiApi = {
     apiClient.put(`/webui/agent-mcps/${agentId}`, names).then(r => r.data),
   getAgentSkills: (agentId: string): Promise<string[]> =>
     apiClient.get(`/webui/agent-skills/${agentId}`).then(r => r.data),
+  // Bound skills resolved as full objects {name, path, is_enabled} — works for
+  // non-admin users too (doesn't depend on the caller's registered skill-dirs).
+  getAgentSkillsFull: (agentId: string): Promise<SkillDef[]> =>
+    apiClient.get(`/webui/agent-skills-full/${agentId}`).then(r => r.data),
   setAgentSkills: (agentId: string, paths: string[]) =>
     apiClient.put(`/webui/agent-skills/${agentId}`, paths).then(r => r.data),
 
@@ -95,6 +106,10 @@ export const webuiApi = {
     apiClient.delete(`/webui/mcp-lib/${encodeURIComponent(name)}`),
   testMcp: (mcp: McpDef): Promise<McpTestResult> =>
     apiClient.post('/webui/mcp-lib/test', mcp, { timeout: 35_000 }).then(r => r.data),
+  // Re-test a saved MCP by name (loads the server-side auth_token — which GET
+  // strips — so the browser never needs to round-trip the secret).
+  testSavedMcp: (name: string): Promise<McpTestResult> =>
+    apiClient.post(`/webui/mcp-lib/test/${encodeURIComponent(name)}`, {}, { timeout: 35_000 }).then(r => r.data),
 
   // Skill directories (Settings)
   getSkillDirs: (): Promise<string[]> =>
@@ -109,6 +124,10 @@ export const webuiApi = {
     apiClient.get('/webui/skill-lib').then(r => r.data),
   toggleSkill: (path: string, is_enabled: boolean) =>
     apiClient.post('/webui/skill-lib/toggle', { path, is_enabled }).then(r => r.data),
+  // Install a skill via `npx skills add` into a registered skill-dir (admin-only).
+  // Returns { ok, stdout, stderr, skills: [{name, path}], error? }
+  installSkill: (command: string, target_dir: string, opts?: { timeout?: number }) =>
+    apiClient.post('/webui/skill-lib/install', { command, target_dir }, { timeout: opts?.timeout ?? 130_000 }).then(r => r.data),
 
   // Schedule proxy (auto-injects model config server-side)
   createSchedule: (body: {

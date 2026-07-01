@@ -1,9 +1,9 @@
 """webui-specific Redis data layer — model configs, MCP lib, Skill lib, schedule proxy."""
-import asyncio, json, httpx, os, re
-from typing import Optional
+import asyncio, json, httpx, os, re, shlex, shutil
+from typing import Literal, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, field_validator
-from auth_router import UserInDB, current_user, _r
+from auth_router import UserInDB, admin_required, current_user, _r
 
 # MCP names get composed into LLM tool names as `mcp__{name}__{tool}`, which
 # providers restrict to [a-zA-Z0-9_-]+. Mirror agentscope's MCPClient regex so
@@ -26,11 +26,19 @@ class ChatModelConfig(BaseModel):
 
 class McpDef(BaseModel):
     name: str
-    transport: str
+    transport: Literal["stdio", "sse", "streamable-http"]
     command: str = ""
     args: list[str] = []
     url: str = ""
+    is_stateful: bool = True
     is_enabled: bool = True
+    # Authentication — applies to remote transports (sse/streamable-http).
+    # Mirrors the Swift MCPDefinition model. auth_token is a server-side
+    # secret (stored in Redis plaintext, same as credential config) and is
+    # stripped from GET /mcp-lib responses so it never reaches the browser.
+    auth_type: Literal["none", "bearer", "api_key", "oauth"] = "none"
+    auth_token: str = ""
+    auth_header_name: str = ""  # api_key only; defaults to X-API-Key
 
     @field_validator("name")
     @classmethod
@@ -43,6 +51,23 @@ class McpDef(BaseModel):
                 "names, so non-ASCII characters (e.g. Chinese) aren't allowed."
             )
         return v
+
+    def auth_headers(self) -> Optional[dict[str, str]]:
+        """Return the HTTP headers implied by auth_type/auth_token, or None.
+
+        Logic mirrors Swift ``MCPDefinition.authHeaders``:
+        - none / empty token  → None
+        - bearer / oauth      → ``Authorization: Bearer <token>``
+        - api_key             → ``<headerName|X-API-Key>: <token>``
+        """
+        if not self.auth_token or self.auth_type == "none":
+            return None
+        if self.auth_type in ("bearer", "oauth"):
+            return {"Authorization": f"Bearer {self.auth_token}"}
+        if self.auth_type == "api_key":
+            header = self.auth_header_name.strip() or "X-API-Key"
+            return {header: self.auth_token}
+        return None
 
 
 class SkillDef(BaseModel):
@@ -100,6 +125,64 @@ async def require_agent_access(
     if agent_id not in user.bound_agent_ids:
         raise HTTPException(403, f"No access to agent '{agent_id}'")
     return user
+
+
+# ── Config namespace ──────────────────────────────────────────────────────────
+#
+# The MCP library, skill-dirs, and skill-disabled sets are keyed by a config
+# "owner". Admins share one namespace (`"admin"`) so a second admin sees the
+# MCPs and skill paths the first admin registered — admins manage one shared
+# library. Non-admin users keep their own namespace (`user.id`) for isolation.
+# Agent-bound config (agent-mcps/agent-skills) is keyed by agent_id, not owner,
+# so it is shared across users regardless of role (gated by require_agent_access).
+
+def _config_owner(user: UserInDB) -> str:
+    return "admin" if user.role == "admin" else user.id
+
+
+def migrate_admin_shared_namespace() -> None:
+    """One-time, idempotent migration: merge each admin's per-user MCP lib,
+    skill-dirs, and skill-disabled sets into the shared ``admin`` namespace,
+    then delete the old per-user keys.
+
+    Before this, MCP/skill config was keyed by ``user.id``, so a second admin
+    saw an empty library. After migration all admins share
+    ``webui:config:*:admin``. Non-admin keys are left untouched (they keep
+    their own namespace). Safe to run on every startup — old keys are deleted
+    once merged, so subsequent boots are no-ops.
+    """
+    r = _r()
+    shared = "admin"
+    for kind in ("mcp-lib", "skill-dirs", "skill-disabled"):
+        shared_key = f"webui:config:{kind}:{shared}"
+        merged = _get_list(shared_key)
+        stale: list[str] = []
+        for k in r.scan_iter(match=f"webui:config:{kind}:*"):
+            owner = k.split(":")[-1]
+            if owner == shared:
+                continue  # the shared key itself
+            # only migrate admins' keys; non-admins keep their own namespace
+            user_data = _get_json(f"webui:user:id:{owner}") or {}
+            if user_data.get("role") != "admin":
+                continue
+            items = _get_list(k)
+            if kind == "mcp-lib":
+                seen = {m.get("name") for m in merged if isinstance(m, dict)}
+                for m in items:
+                    if isinstance(m, dict) and m.get("name") not in seen:
+                        merged.append(m)
+                        seen.add(m.get("name"))
+            else:
+                seen = set(merged)
+                for it in items:
+                    if it not in seen:
+                        merged.append(it)
+                        seen.add(it)
+            stale.append(k)
+        if stale:
+            _set_list(shared_key, merged)
+            for k in stale:
+                r.delete(k)
 
 
 # ── Session ownership tracking ────────────────────────────────────────────────
@@ -217,26 +300,52 @@ async def set_agent_skills(agent_id: str, body: list = Body(...), _: UserInDB = 
     return body
 
 
+@router.get("/agent-skills-full/{agent_id}")
+async def get_agent_skills_full(agent_id: str, user: UserInDB = Depends(require_agent_access)):
+    """Return the agent's bound skills as full skill objects ({name, path, is_enabled}).
+
+    Unlike /skill-lib (which scans the *current user's* registered skill-dirs and
+    therefore returns nothing for non-admin users who haven't registered those
+    dirs), this resolves names directly from the bound SKILL.md paths — so any
+    user with access to the agent can see and invoke its bound skills in the
+    chat skill-picker.
+    """
+    import pathlib
+    paths = _get_list(f"webui:config:agent-skills:{agent_id}")
+    disabled = set(_get_list(_skill_disabled_key(_config_owner(user))))
+    skills = []
+    for p in paths:
+        sk = pathlib.Path(p)
+        skills.append({
+            "name": sk.parent.name,
+            "path": p,
+            "is_enabled": p not in disabled,
+        })
+    return skills
+
+
 # ── Session workspace injection ───────────────────────────────────────────────
 
 def _mcpdef_to_client(m: dict) -> dict:
     """Convert webui McpDef (flat) to agentscope MCPClient (nested) format."""
-    if m.get("transport") == "stdio":
+    mcp = McpDef(**m)  # validate + get auth_headers() for free
+    if mcp.transport == "stdio":
         return {
-            "name": m["name"],
-            "is_stateful": True,
+            "name": mcp.name,
+            "is_stateful": mcp.is_stateful,
             "mcp_config": {
                 "type": "stdio_mcp",
-                "command": m.get("command", ""),
-                "args": m.get("args") or None,
+                "command": mcp.command,
+                "args": mcp.args or None,
             },
         }
     return {
-        "name": m["name"],
+        "name": mcp.name,
         "is_stateful": False,
         "mcp_config": {
             "type": "http_mcp",
-            "url": m.get("url", ""),
+            "url": mcp.url,
+            "headers": mcp.auth_headers(),
         },
     }
 
@@ -274,7 +383,7 @@ async def apply_session_workspace(body: dict, user: UserInDB = Depends(current_u
                 existing_names = {m.get("name") for m in ws_resp.json()}
 
             # Get full MCP definitions from mcp-lib
-            all_mcps = _get_list(f"webui:config:mcp-lib:{user.id}")
+            all_mcps = _get_list(_mcp_key(_config_owner(user)))
             to_add = [m for m in all_mcps
                       if m.get("name") in desired_mcp_names
                       and m.get("name") not in existing_names]
@@ -393,89 +502,129 @@ def _mcp_key(user_id: str) -> str:
     return f"webui:config:mcp-lib:{user_id}"
 
 
+def _require_stdio_admin(mcp: "McpDef", user: UserInDB) -> None:
+    """Restrict stdio MCPs to admins.
+
+    stdio MCPs spawn ``command args`` on the backend host as the backend OS
+    user — any command runs there. A command allowlist (npx/python/...) does
+    NOT prevent RCE (``python -c "import os; os.system(...)"``), so on a
+    multi-tenant backend stdio must be admin-only. Remote transports
+    (sse/streamable-http) are outbound HTTP and are safe for all users.
+    """
+    if mcp.transport == "stdio" and user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "stdio MCPs run commands on the backend host and are "
+                "admin-only. Use sse or streamable-http for remote MCPs."
+            ),
+        )
+
+
+def _validate_mcp_fields(mcp: "McpDef") -> None:
+    """Transport-specific required fields."""
+    if mcp.transport == "stdio":
+        if not mcp.command.strip():
+            raise HTTPException(400, "command is required for stdio transport")
+    else:
+        if not mcp.url.strip():
+            raise HTTPException(400, "url is required for remote transport")
+
+
 @router.get("/mcp-lib")
 async def get_mcp_lib(user: UserInDB = Depends(current_user)):
-    return _get_list(_mcp_key(user.id))
+    # Strip auth_token so the secret never reaches the browser. Saved MCPs are
+    # re-tested via /mcp-lib/test/{name} which loads the full def server-side.
+    return [{**m, "auth_token": ""} for m in _get_list(_mcp_key(_config_owner(user)))]
 
 
 @router.post("/mcp-lib")
 async def add_mcp(mcp: McpDef, user: UserInDB = Depends(current_user)):
-    mcps = _get_list(_mcp_key(user.id))
+    _require_stdio_admin(mcp, user)
+    _validate_mcp_fields(mcp)
+    mcps = _get_list(_mcp_key(_config_owner(user)))
     if any(m["name"] == mcp.name for m in mcps):
         raise HTTPException(409, f"MCP '{mcp.name}' already exists")
     mcps.append(mcp.model_dump())
-    _set_list(_mcp_key(user.id), mcps)
+    _set_list(_mcp_key(_config_owner(user)), mcps)
     return mcp
 
 
 @router.patch("/mcp-lib/{name}")
 async def toggle_mcp(name: str, body: dict, user: UserInDB = Depends(current_user)):
-    mcps = _get_list(_mcp_key(user.id))
+    mcps = _get_list(_mcp_key(_config_owner(user)))
     updated = [
         {**m, "is_enabled": body.get("is_enabled", m["is_enabled"])} if m["name"] == name else m
         for m in mcps
     ]
-    _set_list(_mcp_key(user.id), updated)
+    _set_list(_mcp_key(_config_owner(user)), updated)
     return next((m for m in updated if m["name"] == name), None)
 
 
 @router.delete("/mcp-lib/{name}", status_code=204)
 async def delete_mcp(name: str, user: UserInDB = Depends(current_user)):
-    mcps = _get_list(_mcp_key(user.id))
-    _set_list(_mcp_key(user.id), [m for m in mcps if m["name"] != name])
+    mcps = _get_list(_mcp_key(_config_owner(user)))
+    _set_list(_mcp_key(_config_owner(user)), [m for m in mcps if m["name"] != name])
 
 
-@router.post("/mcp-lib/test")
-async def test_mcp(mcp: McpDef, _: UserInDB = Depends(current_user)):
-    """Probe an MCP definition: connect and list tools.
+# ── MCP connection probe (shared by both test endpoints) ──────────────────────
 
-    Returns 200 in both success and failure cases — failure is a legitimate
-    result, not a server error. Frontend uses this for both the Register
-    dialog's Test button and for the list page's expand-row tool listing.
-    """
+def _unwrap_exc(exc: BaseException) -> BaseException:
+    """anyio TaskGroup wraps real errors in ExceptionGroup — dig out the cause."""
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    return exc
+
+
+async def _probe_mcp(mcp: McpDef) -> list:
+    """Connect to the MCP and return its raw tool list. Raises on failure."""
     from agentscope.mcp import MCPClient, StdioMCPConfig, HttpMCPConfig
 
-    is_stdio = mcp.transport == "stdio"
-    timeout = 30.0 if is_stdio else 15.0
-
-    async def _probe() -> list:
-        if is_stdio:
-            client = MCPClient(
-                name="mcptest",
-                is_stateful=True,
-                mcp_config=StdioMCPConfig(
-                    type="stdio_mcp",
-                    command=mcp.command,
-                    args=mcp.args or None,
-                ),
-            )
-            await client.connect()
-            try:
-                return await client.list_raw_tools()
-            finally:
-                await client.close(ignore_errors=True)
-        else:
-            client = MCPClient(
-                name="mcptest",
-                is_stateful=False,
-                mcp_config=HttpMCPConfig(type="http_mcp", url=mcp.url),
-            )
+    if mcp.transport == "stdio":
+        client = MCPClient(
+            name="mcptest",
+            is_stateful=mcp.is_stateful,
+            mcp_config=StdioMCPConfig(
+                type="stdio_mcp",
+                command=mcp.command,
+                args=mcp.args or None,
+            ),
+        )
+        await client.connect()
+        try:
             return await client.list_raw_tools()
+        finally:
+            await client.close(ignore_errors=True)
+    # remote: sse / streamable-http (agentscope auto-selects by URL suffix)
+    client = MCPClient(
+        name="mcptest",
+        is_stateful=False,
+        mcp_config=HttpMCPConfig(
+            type="http_mcp",
+            url=mcp.url,
+            headers=mcp.auth_headers(),
+        ),
+    )
+    return await client.list_raw_tools()
 
-    def _unwrap(exc: BaseException) -> BaseException:
-        """anyio TaskGroup wraps real errors in ExceptionGroup — dig out the cause."""
-        while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
-            exc = exc.exceptions[0]
-        return exc
 
+async def _run_mcp_test(mcp: McpDef) -> dict:
+    """Probe an MCP and format the result. Returns 200-style {ok, ...}.
+
+    Failure is a legitimate result, not a server error — both branches return
+    a dict so the frontend can render success/failure uniformly.
+    """
+    timeout = 30.0 if mcp.transport == "stdio" else 15.0
     try:
-        tools = await asyncio.wait_for(_probe(), timeout=timeout)
+        tools = await asyncio.wait_for(_probe_mcp(mcp), timeout=timeout)
     except asyncio.TimeoutError:
         return {"ok": False, "error": f"Timed out after {int(timeout)}s"}
-    except BaseException as e:
-        root = _unwrap(e)
+    except Exception as e:
+        # anyio wraps probe errors in ExceptionGroup (subclass of Exception);
+        # dig out the root cause. Don't catch BaseException — that would swallow
+        # KeyboardInterrupt/SystemExit.
+        root = _unwrap_exc(e)
         return {"ok": False, "error": f"{type(root).__name__}: {root}"}
-
     return {
         "ok": True,
         "tool_count": len(tools),
@@ -484,6 +633,29 @@ async def test_mcp(mcp: McpDef, _: UserInDB = Depends(current_user)):
             for t in tools
         ],
     }
+
+
+@router.post("/mcp-lib/test")
+async def test_mcp(mcp: McpDef, user: UserInDB = Depends(current_user)):
+    """Test an unsaved MCP definition (Register dialog's Test button)."""
+    _require_stdio_admin(mcp, user)
+    return await _run_mcp_test(mcp)
+
+
+@router.post("/mcp-lib/test/{name}")
+async def test_saved_mcp(name: str, user: UserInDB = Depends(current_user)):
+    """Re-test a saved MCP by name (list page's expand-row tool listing).
+
+    Loads the full definition — including the server-side auth_token, which is
+    stripped from GET /mcp-lib — from Redis, then probes.
+    """
+    mcps = _get_list(_mcp_key(_config_owner(user)))
+    raw = next((m for m in mcps if m.get("name") == name), None)
+    if not raw:
+        raise HTTPException(404, f"MCP '{name}' not found")
+    mcp = McpDef(**raw)
+    _require_stdio_admin(mcp, user)
+    return await _run_mcp_test(mcp)
 
 
 # ── Skills — directory-based scanning ────────────────────────────────────────
@@ -520,7 +692,7 @@ def _scan_skills(dirs: list, disabled: set) -> list:
 
 @router.get("/skill-dirs")
 async def get_skill_dirs(user: UserInDB = Depends(current_user)):
-    return _get_list(_skill_dirs_key(user.id))
+    return _get_list(_skill_dirs_key(_config_owner(user)))
 
 
 @router.post("/skill-dirs")
@@ -528,26 +700,29 @@ async def add_skill_dir(body: dict, user: UserInDB = Depends(current_user)):
     path = body.get("path", "").strip()
     if not path:
         raise HTTPException(400, "path required")
-    dirs = _get_list(_skill_dirs_key(user.id))
+    owner = _config_owner(user)
+    dirs = _get_list(_skill_dirs_key(owner))
     if path not in dirs:
         dirs.append(path)
-        _set_list(_skill_dirs_key(user.id), dirs)
+        _set_list(_skill_dirs_key(owner), dirs)
     return dirs
 
 
 @router.delete("/skill-dirs")
 async def delete_skill_dir(body: dict, user: UserInDB = Depends(current_user)):
     path = body.get("path", "").strip()
-    dirs = _get_list(_skill_dirs_key(user.id))
-    _set_list(_skill_dirs_key(user.id), [d for d in dirs if d != path])
+    owner = _config_owner(user)
+    dirs = _get_list(_skill_dirs_key(owner))
+    _set_list(_skill_dirs_key(owner), [d for d in dirs if d != path])
     return {"ok": True}
 
 
 @router.get("/skill-lib")
 async def get_skill_lib(user: UserInDB = Depends(current_user)):
     """Scan registered skill directories and return discovered skills."""
-    dirs = _get_list(_skill_dirs_key(user.id))
-    disabled = set(_get_list(_skill_disabled_key(user.id)))
+    owner = _config_owner(user)
+    dirs = _get_list(_skill_dirs_key(owner))
+    disabled = set(_get_list(_skill_disabled_key(owner)))
     return _scan_skills(dirs, disabled)
 
 
@@ -558,13 +733,188 @@ async def toggle_skill(body: dict, user: UserInDB = Depends(current_user)):
     is_enabled = body.get("is_enabled", True)
     if not path:
         raise HTTPException(400, "path required")
-    disabled = set(_get_list(_skill_disabled_key(user.id)))
+    owner = _config_owner(user)
+    disabled = set(_get_list(_skill_disabled_key(owner)))
     if is_enabled:
         disabled.discard(path)   # removing from disabled = enabling
     else:
         disabled.add(path)       # adding to disabled = disabling
-    _set_list(_skill_disabled_key(user.id), list(disabled))
+    _set_list(_skill_disabled_key(owner), list(disabled))
     return {"path": path, "is_enabled": is_enabled}
+
+
+# ── Skill install via `npx skills add` (admin-only) ──────────────────────────
+
+# Tokens that indicate shell metacharacter injection — the parsed command must
+# only ever be an `npx skills add ...` invocation, so any of these → reject.
+_SKILL_INSTALL_FORBIDDEN = set(";|&$`()<>{}\n\r")
+_SKILL_INSTALL_ALLOWED_FLAGS = {"--skill", "--force"}
+
+
+def _parse_skill_install_command(raw: str) -> list[str]:
+    """Parse a user-typed `npx skills add <url> --skill <name> [--force]`.
+
+    Returns a sanitized argv list. Never executes the raw string — extracts the
+    url + skill name and rebuilds a controlled command, rejecting shell
+    metacharacters and non-whitelisted flags. Raises HTTPException(400) on any
+    deviation.
+    """
+    if not raw or not raw.strip():
+        raise HTTPException(400, "command is required")
+    for ch in _SKILL_INSTALL_FORBIDDEN:
+        if ch in raw:
+            raise HTTPException(
+                400,
+                f"command contains forbidden character {ch!r}; "
+                "only `npx skills add <url> --skill <name> [--force]` is supported.",
+            )
+    try:
+        tokens = shlex.split(raw)
+    except ValueError as e:
+        raise HTTPException(400, f"could not parse command: {e}")
+
+    if len(tokens) < 4 or tokens[0] != "npx" or tokens[1] != "skills" or tokens[2] != "add":
+        raise HTTPException(
+            400,
+            "command must start with `npx skills add <url> --skill <name>`.",
+        )
+
+    url: Optional[str] = None
+    skill_name: Optional[str] = None
+    force = False
+    i = 3
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == "--skill":
+            if i + 1 >= len(tokens):
+                raise HTTPException(400, "--skill requires a value")
+            skill_name = tokens[i + 1]
+            i += 2
+        elif tok == "--force":
+            force = True
+            i += 1
+        elif tok.startswith("-"):
+            raise HTTPException(400, f"unsupported flag {tok!r}")
+        else:
+            if url is not None:
+                raise HTTPException(400, "only one source URL is allowed")
+            url = tok
+            i += 1
+
+    if not url or not skill_name:
+        raise HTTPException(400, "url and --skill <name> are required")
+
+    cmd = ["npx", "--yes", "skills", "add", url, "--skill", skill_name]
+    if force:
+        cmd.append("--force")
+    return cmd
+
+
+def _ensure_skill_dir_registered(owner: str, dir_path: str) -> None:
+    """Register a directory as a skill-dir for the config owner if not already present.
+
+    Used after install so that wherever the `skills` CLI lands a skill under the
+    target dir, its containing skill-dir is scanned by `_scan_skills`.
+    """
+    dirs = _get_list(_skill_dirs_key(owner))
+    if dir_path not in dirs:
+        dirs.append(dir_path)
+        _set_list(_skill_dirs_key(owner), dirs)
+
+
+@router.post("/skill-lib/install")
+async def install_skill(body: dict, user: UserInDB = Depends(admin_required)):
+    """Install a skill via `npx skills add` into a registered skill-dir.
+
+    Admin-only: npx runs the `skills` package on the backend host and the skill
+    content is written to shared disk + injected into LLM prompts (cross-tenant
+    prompt-injection / SSRF surface). The command is parsed and rebuilt — the
+    user's raw string is never executed — so only `npx skills add <url>
+    --skill <name> [--force]` is honored.
+    """
+    import pathlib
+
+    target_dir = (body.get("target_dir") or "").strip()
+    command = body.get("command") or ""
+
+    # target_dir must be one of the user's registered skill-dirs.
+    owner = _config_owner(user)
+    registered = _get_list(_skill_dirs_key(owner))
+    if not target_dir:
+        raise HTTPException(400, "target_dir is required")
+    if target_dir not in registered:
+        raise HTTPException(
+            403,
+            "target_dir must be one of your registered skill directories "
+            "(configure them in Settings).",
+        )
+    target_path = pathlib.Path(target_dir)
+    if not target_path.is_dir():
+        raise HTTPException(400, f"target_dir does not exist: {target_dir}")
+
+    cmd = _parse_skill_install_command(command)
+
+    if not shutil.which("npx"):
+        raise HTTPException(400, "npx not found on the backend host")
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=target_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except asyncio.TimeoutError:
+        proc.kill()  # type: ignore[union-attr]
+        return {
+            "ok": False,
+            "error": "Timed out after 120s",
+            "stdout": "",
+            "stderr": "",
+            "skills": [],
+        }
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "error": "npx not found on the backend host",
+            "stdout": "",
+            "stderr": "",
+            "skills": [],
+        }
+
+    stdout_s = stdout.decode("utf-8", errors="replace")
+    stderr_s = stderr.decode("utf-8", errors="replace")
+
+    if proc.returncode != 0:
+        tail = stderr_s.strip()[-400:] or stdout_s.strip()[-400:]
+        return {
+            "ok": False,
+            "error": f"npx exited {proc.returncode}: {tail}",
+            "stdout": stdout_s,
+            "stderr": stderr_s,
+            "skills": [],
+        }
+
+    # Discover SKILL.md files created under target_dir (depth-limited) and
+    # ensure each skill's containing dir is registered so _scan_skills finds it.
+    discovered: list[dict] = []
+    for skill_file in target_path.glob("**/SKILL.md"):
+        # Skip nested .git / node_modules that the CLI may have checked out.
+        parts = skill_file.relative_to(target_path).parts
+        if any(seg in {".git", "node_modules"} for seg in parts):
+            continue
+        skill_dir = skill_file.parent  # dir containing SKILL.md
+        scan_dir = str(skill_dir.parent)  # dir _scan_skills iterates
+        _ensure_skill_dir_registered(owner, scan_dir)
+        discovered.append({"name": skill_dir.name, "path": str(skill_file)})
+
+    return {
+        "ok": True,
+        "stdout": stdout_s,
+        "stderr": stderr_s,
+        "skills": discovered,
+    }
 
 
 # ── Schedule proxy (auto-injects chat_model_config from agent model) ──────────

@@ -55,14 +55,16 @@ export default function ChatPage() {
     ? allAgents
     : allAgents.filter(a => boundAgentIds.includes(a.id))
 
-  // Skills for the chat skill-picker (all enabled + this agent's bound paths)
-  const { data: allSkills = [] } = useQuery({ queryKey: ['skill-lib'], queryFn: webuiApi.getSkillLib })
-  const { data: agentSkillPaths = [] } = useQuery({
-    queryKey: ['agent-skills', agentId],
-    queryFn: () => webuiApi.getAgentSkills(agentId!),
+  // Skills for the chat skill-picker: ONLY this agent's bound skills, resolved
+  // server-side so non-admin users (whose own skill-dirs may be empty) still see
+  // and can invoke them. Bound skills are already injected into the workspace by
+  // applyAgentWorkspace; the picker re-injects via injectSessionSkill (idempotent).
+  const { data: boundSkills = [] } = useQuery({
+    queryKey: ['agent-skills-full', agentId],
+    queryFn: () => webuiApi.getAgentSkillsFull(agentId!),
     enabled: !!agentId,
   })
-  const enabledSkills = (allSkills as SkillDef[]).filter(s => s.is_enabled)
+  const enabledBoundSkills = (boundSkills as SkillDef[]).filter(s => s.is_enabled)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, sseState.streaming])
 
@@ -523,8 +525,7 @@ export default function ChatPage() {
 
       {skillPickerOpen && (
         <SkillPickerModal
-          skills={enabledSkills}
-          boundPaths={agentSkillPaths as string[]}
+          skills={enabledBoundSkills}
           onPick={onPickSkill}
           onClose={() => setSkillPickerOpen(false)}
         />

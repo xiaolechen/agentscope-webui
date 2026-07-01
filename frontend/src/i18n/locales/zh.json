@@ -62,9 +62,8 @@
       "injectFailed": "skill 注入失败：{{error}}",
       "picker": {
         "title": "选择 Skill",
-        "subtitle": "选择一个 skill 调用（绑定的在前）",
+        "subtitle": "选择一个该 Agent 绑定的 skill 调用",
         "searchPlaceholder": "搜索 skill 名称…",
-        "bound": "已绑定",
         "noMatch": "没有匹配的 skill"
       }
     },
@@ -139,11 +138,22 @@
   "skills": {
     "title": "Skill",
     "hint": { "pathManagement": "路径管理 → 设置" },
+    "button": { "add": "+ 添加 Skill" },
     "search": { "placeholder": "搜索 skill…", "count": "{{count}} 个" },
     "badge": { "enabled": "已启用", "disabled": "已禁用" },
     "empty": {
       "noSkills": "尚无 Skill，请到 Settings → Skill Paths 添加路径。",
       "noMatch": "无匹配结果。"
+    },
+    "dialog": { "install": "添加 Skill" },
+    "install": {
+      "targetDir": "安装目录",
+      "placeholder": "npx skills add https://github.com/vercel-labs/skills --skill find-skills",
+      "running": "安装中…（npx 可能需要联网下载）",
+      "success": "已添加 {{names}}",
+      "failed": "失败：{{message}}",
+      "noSkillFound": "命令完成，但未发现新的 SKILL.md",
+      "noDirs": "尚未注册任何 skill 目录，请先到 Settings → Skill Paths 添加。"
     }
   },
   "mcp": {
@@ -153,9 +163,23 @@
     "dialog": { "register": "注册 MCP Server" },
     "form": {
       "namePlaceholder": "名称（唯一）",
+      "transport": "传输方式",
       "commandPlaceholder": "命令（如 npx）",
       "argsPlaceholder": "参数（空格分隔）",
-      "urlPlaceholder": "URL"
+      "stateful": "有状态（保持进程常驻）",
+      "urlPlaceholder": "URL",
+      "stdioAdminOnly": "stdio 在服务器主机上执行命令——仅 admin 可用。"
+    },
+    "auth": {
+      "title": "认证",
+      "method": "方式",
+      "none": "无",
+      "bearer": "Bearer Token",
+      "apiKey": "API Key",
+      "oauth": "OAuth",
+      "tokenPlaceholder": "Token / Key",
+      "headerNamePlaceholder": "Header 名（默认：X-API-Key）",
+      "oauthHint": "填入 OAuth access token。本应用不管理刷新。"
     },
     "test": {
       "probingStdio": "探测中…（stdio 最长 30 秒）",
