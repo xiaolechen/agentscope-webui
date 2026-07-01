@@ -6,12 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/common.sh"
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✓${NC} $*"; }
-warn() { echo -e "${YELLOW}!${NC} $*"; }
-err()  { echo -e "${RED}✗${NC} $*"; }
-info() { echo -e "  $*"; }
 step() { echo -e "\n$(tput bold 2>/dev/null || true)[$(($STEP_N))] $*$(tput sgr0 2>/dev/null || true)"; STEP_N=$((STEP_N+1)); }
 STEP_N=1
 
@@ -322,7 +318,7 @@ print("\n".join(deps))
 PYEOF
 )
 if [ -n "$OTHER_DEPS" ]; then
-    echo "$OTHER_DEPS" | xargs uv pip install --python "$PYTHON" $UV_TLS --upgrade
+    echo "$OTHER_DEPS" | xargs uv pip install --python "$PYTHON" $UV_TLS
 fi
 
 ok "Backend deps installed ($("$PYTHON" --version))"

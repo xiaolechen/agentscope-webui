@@ -1,6 +1,7 @@
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/common.sh"
 
 LOG_DATE=$(date +%Y-%m-%d)
 BACKEND_LOG="logs/backend/backend.log"

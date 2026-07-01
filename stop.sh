@@ -2,21 +2,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PID_FILE="$SCRIPT_DIR/.pids"
+cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/common.sh"
+load_env
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✓${NC} $*"; }
-warn() { echo -e "${YELLOW}!${NC} $*"; }
-err()  { echo -e "${RED}✗${NC} $*"; }
-
-PORTS="8000 5173"
+PORTS="$BACKEND_PORT $FRONTEND_PORT"
 
 port_label() {
-    case "$1" in
-        8000) echo "Backend API :8000" ;;
-        5173) echo "Frontend :5173" ;;
-        *)    echo "Service :$1" ;;
-    esac
+    local port=$1
+    if [ "$port" = "$BACKEND_PORT" ]; then
+        echo "Backend API :${port}"
+    elif [ "$port" = "$FRONTEND_PORT" ]; then
+        echo "Frontend :${port}"
+    else
+        echo "Service :${port}"
+    fi
 }
 
 echo ""
@@ -48,8 +48,7 @@ fi
 echo ""
 echo "Checking for leftover processes on ports..."
 for port in $PORTS; do
-    # lsof works on macOS + Linux; fuser's `port/tcp` syntax is Linux-only.
-    pids=$(lsof -ti ":${port}" 2>/dev/null || true)
+    pids=$(pids_on_port "$port")
     if [ -n "$pids" ]; then
         warn "Port $port still in use (PID $pids) — force killing..."
         kill -9 $pids 2>/dev/null || true

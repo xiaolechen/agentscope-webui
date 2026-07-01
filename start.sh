@@ -3,27 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
-
-# ── Colors ────────────────────────────────────────────────────────────────────
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✓${NC} $*"; }
-warn() { echo -e "${YELLOW}!${NC} $*"; }
-err()  { echo -e "${RED}✗${NC} $*"; }
-info() { echo -e "  $*"; }
-
-# ── Load env ──────────────────────────────────────────────────────────────────
-if [ ! -f .env ]; then
-    warn ".env not found — run 'bash setup.sh' first to initialize the environment."
-    warn "Falling back to defaults (JWT_SECRET will be random, sessions reset on restart)."
-fi
-[ -f .env ] && source ./.env
-
-# Reuse local .venv created by setup.sh
-PYTHON="${SCRIPT_DIR}/.venv/bin/python"
-
-# ── Ports (override via .env or environment) ──────────────────────────────────
-BACKEND_PORT="${BACKEND_PORT:-8000}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+source "$SCRIPT_DIR/scripts/common.sh"
+load_env
 
 echo ""
 echo "┌──────────────────────────────────────────┐"
@@ -49,31 +30,29 @@ if [ ! -x "$PYTHON" ]; then
 fi
 ok "Python $("$PYTHON" --version)"
 
+# ── Python dependency preflight ───────────────────────────────────────────────
+echo "[prereq] Checking Python dependencies..."
+FAILED_MODS=""
+for mod in redis fastapi agentscope uvicorn jose passlib; do
+    if ! "$PYTHON" -c "import $mod" 2>/dev/null; then
+        FAILED_MODS="${FAILED_MODS} ${mod}"
+    fi
+done
+if [ -n "$FAILED_MODS" ]; then
+    err "Missing Python modules:${FAILED_MODS}"
+    info "Run: bash setup.sh"
+    exit 1
+fi
+ok "Python dependencies OK"
+
 # ── Dirs ──────────────────────────────────────────────────────────────────────
 mkdir -p logs/backend logs/frontend
 LOG_DATE=$(date +%Y-%m-%d)
-PID_FILE="$SCRIPT_DIR/.pids"
 
 > "logs/backend/backend-console-${LOG_DATE}.log"
 > "logs/frontend/frontend-${LOG_DATE}.log"
 
 # ── Port cleanup ──────────────────────────────────────────────────────────────
-# Cross-platform: lsof works on macOS + Linux; fuser's `port/tcp` syntax is
-# Linux-only and silently no-ops on macOS, leaving stale processes alive.
-kill_port() {
-    local port=$1
-    local pids
-    pids=$(lsof -ti ":${port}" 2>/dev/null || true)
-    if [ -n "$pids" ]; then
-        warn "Port $port in use (PID $pids) — killing..."
-        kill $pids 2>/dev/null || true
-        sleep 0.5
-        # Force-kill anything still hanging on
-        pids=$(lsof -ti ":${port}" 2>/dev/null || true)
-        [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
-    fi
-}
-
 echo ""
 echo "[1/3] Cleaning up ports $BACKEND_PORT / $FRONTEND_PORT..."
 kill_port "$BACKEND_PORT"
@@ -91,7 +70,7 @@ wait_for_ready() {
             echo " (${elapsed}s)"
             return 0
         fi
-        if [ -f "$log_file" ] && grep -qE "Traceback \(most recent|ELIFECYCLE|Cannot find module" "$log_file" 2>/dev/null; then
+        if [ -f "$log_file" ] && grep -qE "Traceback \(most recent|ELIFECYCLE|Cannot find module|ImportError|ModuleNotFoundError|SyntaxError|EADDRINUSE" "$log_file" 2>/dev/null; then
             echo ""
             err "$label crashed during startup"
             return 1
