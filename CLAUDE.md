@@ -10,20 +10,21 @@
 agentscope-webui/
 │
 ├── backend/                        # Python 后端（FastAPI）
-│   ├── main.py                     # 应用入口：注册路由、配置日志、workspace 路径（绝对路径，指向项目根）
-│   ├── auth_router.py              # JWT 认证：sha256_crypt 密码哈希（bcrypt 4.x 有兼容问题）
+│   ├── main.py                     # 应用入口：注册路由、配置日志、workspace 路径（绝对路径，指向项目根）、调用 migrate_admin_shared_namespace()
+│   ├── auth_router.py              # JWT 认证：sha256_crypt 密码哈希（bcrypt 4.x 有兼容问题）；webui_user_id 依赖覆盖
 │   ├── users_router.py             # 用户 CRUD，Admin only，操作 Redis webui:user:* 命名空间
-│   ├── webui_router.py             # Webui 专属数据层：模型配置、MCP 库、Skill 库、Schedule 代理
+│   ├── webui_router.py             # Webui 专属数据层：模型配置、MCP 库（含认证/编辑/测试）、Skill 库（含安装）、Schedule 代理、预设问题、session-workspace 注入
+│   ├── redis_browser_router.py     # Redis 数据浏览器（Admin 只读）：/webui/redis/keys、/webui/redis/key
 │   └── pyproject.toml              # 依赖声明（文档用途，实际安装在 .venv/）
 │
 ├── frontend/                       # React 前端（Vite + TypeScript）
 │   ├── src/
 │   │   ├── api/                    # axios 封装层（client.ts 自动注入 JWT + x-user-id: webui）
 │   │   │   ├── client.ts           # ← 修改 Header 逻辑的唯一入口
-│   │   │   └── webui.ts            # Webui 专属接口（模型配置、MCP/Skill 库）
+│   │   │   └── webui.ts            # Webui 专属接口（模型配置、MCP 库编辑/测试、Skill 安装、预设问题、Redis 浏览）
 │   │   ├── features/               # 页面模块（每个子目录 = 一个路由页面）
 │   │   │   └── chat/
-│   │   │       ├── ChatPage.tsx    # 发送逻辑：PATCH session → POST /chat/ → SSE start()
+│   │   │       ├── ChatPage.tsx    # 发送逻辑：PATCH session → session-workspace → POST /chat/ → SSE start()；空状态展示预设问题
 │   │   │       └── useSSEStream.ts # SSE 核心：fetch 直连后端（绕过 Vite proxy）
 │   │   ├── store/auth.ts           # Zustand：token、role、boundAgentIds
 │   │   └── index.css               # CSS 设计 token（颜色、字体、间距变量）
@@ -61,10 +62,10 @@ agentscope-webui/
 
 ### 2. Chat 发消息顺序
 ```
-PATCH session（注入 model config） → POST /chat/（触发）→ start()（连流）
+PATCH session（注入 model config） → POST /webui/session-workspace（注入 MCP+Skill） → POST /chat/（触发）→ start()（连流）
 ```
 
-**原因**：agentscope 的 stream 端点在 session 未激活时立即关闭连接（只返回 `:` keepalive）。必须先触发 chat，再连流。
+**原因**：agentscope 的 stream 端点在 session 未激活时立即关闭连接（只返回 `:` keepalive）。必须先触发 chat，再连流。session-workspace 把 agent 绑定的 MCP/Skill 注入到 workspace，否则 agent 调用不到工具。
 
 ### 3. Session 必须有 chat_model_config
 每次发消息前都会 PATCH session 写入模型配置（`sessionsApi.update(sid, agentId, { chat_model_config })`），确保后端能处理请求。
@@ -79,6 +80,25 @@ PATCH session（注入 model config） → POST /chat/（触发）→ start()（
 **关键**：agentscope 原生的 `get_current_user_id`（`agentscope/app/deps.py`）只检查 `X-User-ID` 头非空——任何人都能伪造。`backend/main.py` 用 `app.dependency_overrides[get_current_user_id] = auth_router.webui_user_id` **全局替换成 JWT 鉴权**：必须带有效 webui JWT 才放行，通过后服务端覆写为共享命名空间 `"webui"`（客户端伪造的头不再可信）。这保护了 `/credential/*`、`/sessions/*`、`/chat/`、`/workspace/*`、`/schedule/*`、`/agent/*`、`/knowledge-base/*`。新增 agentscope 端点默认也受保护。
 
 后端默认绑 `127.0.0.1`（`BACKEND_HOST` 环境变量，默认 loopback）；需要外网暴露时设 `BACKEND_HOST=0.0.0.0` 且必须放反代后面。
+
+### 5. Admin 共享配置命名空间
+`webui_router.py` 的 `_config_owner(user)` 对 admin 返回固定字符串 `"admin"`，对非 admin 返回 `user.id`。MCP 库、skill-dirs、skill-disabled 这三组 key 按 owner 命名：
+
+- `webui:config:mcp-lib:{owner}`
+- `webui:config:skill-dirs:{owner}`
+- `webui:config:skill-disabled:{owner}`
+
+**原因**：多个 admin 共管一套 MCP/Skill 库，第二个 admin 不至于看到空库。非 admin 仍按 user.id 隔离。Agent 级配置（`agent-mcps`/`agent-skills`/`agent-questions`）按 `agent_id` 命名，跨用户共享，由 `require_agent_access` 把关。
+
+`backend/main.py` 启动时调 `migrate_admin_shared_namespace()` 幂等迁移：把每个 admin 旧的 per-user key 合并进 `admin` 共享 key 后删除。安全可重复运行——已合并的旧 key 被删除，后续启动是 no-op。
+
+### 6. 内部调用透传 JWT
+`apply_session_workspace` / `inject_session_skill` 用 `httpx` 调 agentscope 原生 `/workspace/*` 端点。这些端点已 JWT 鉴权（决策 4），所以必须把请求的 `Authorization` 头透传过去，否则返 401。两个函数都从 `request: Request` 取 `Authorization` 加到 `headers`。
+
+**不要**在内部 httpx 调用里省略 Authorization 头。
+
+### 7. MCP 认证是服务端密钥
+`McpDef` 的 `auth_token` 是服务端密钥（存 Redis 明文，与 credential 同级）。`GET /webui/mcp-lib` 响应里 **`auth_token` 被剥离**（永远不下发浏览器）。编辑时若 `auth_token` 留空，保留原值；重测走 `POST /webui/mcp-lib/test/{name}` 按名加载已存 token。stdio MCP 注册/测试仅 admin 可用（远程 sse/streamable-http 全员可用）。
 
 ---
 
@@ -119,19 +139,37 @@ npm run build --prefix frontend  # 生产构建（TypeScript 检查 + Vite）
 /auth/*        # JWT 登录（auth_router.py）
 /users/*       # 用户 CRUD，Admin only（users_router.py）
 /webui/*       # Webui 数据层（webui_router.py）
-  /webui/me/default-model      # 用户默认模型
-  /webui/agent-model/{id}      # Agent 模型配置
-  /webui/cred-models/{id}      # Credential 自定义模型
-  /webui/mcp-lib               # MCP 库（Redis 存储）
-  /webui/skill-lib             # Skill 库（Redis 存储）
-  /webui/schedule              # Schedule 创建代理（自动注入 model config）
-  /webui/session-track         # Session 归属记录
-  /webui/my-session-ids/{id}   # 用户可见的 Session ID 列表
-/agent/*       # agentscope 原生 Agent API
-/sessions/*    # agentscope 原生 Session API
-/credential/*  # agentscope 原生 Credential API
-/schedule/*    # agentscope 原生 Schedule API
-/chat/         # agentscope 原生 Chat trigger
+  /webui/me/default-model          # 用户默认模型（按 user.id）
+  /webui/agent-model/{id}          # Agent 模型配置（按 agent_id）
+  /webui/agent-mcps/{id}           # Agent 绑定的 MCP 名列表
+  /webui/agent-skills/{id}         # Agent 绑定的 skill 路径列表
+  /webui/agent-skills-full/{id}    # 同上，但解析成 {name,path,is_enabled}（非 admin 也能用，不依赖调用方 skill-dirs）
+  /webui/agent-questions/{id}      # Agent 预设问题（string[]，最多 5）
+  /webui/cred-models/{id}          # Credential 自定义模型名
+  /webui/mcp-lib                   # MCP 库（按 owner：admin 共享 / 非 admin 隔离）
+  /webui/mcp-lib/{name}            # PUT 编辑（name 不可变）/ PATCH 启停 / DELETE
+  /webui/mcp-lib/test              # POST 临时测试（带表单里的 token）
+  /webui/mcp-lib/test/{name}       # POST 按名重测（加载服务端 token）
+  /webui/skill-dirs                # Skill 根目录（按 owner）
+  /webui/skill-lib                 # Skill 库扫描结果
+  /webui/skill-lib/toggle          # 启停 skill
+  /webui/skill-lib/install         # npx skills add 安装（admin only，目标须是已注册 skill-dir）
+  /webui/session-workspace         # 注入 agent 的 MCP+Skill 到 session workspace（透传 JWT）
+  /webui/session-skill             # 单 skill 注入活跃 session（透传 JWT）
+  /webui/session-track             # Session 归属记录
+  /webui/my-session-ids/{id}       # 用户可见的 Session ID 列表
+  /webui/schedule                  # Schedule 创建代理（自动注入 model config）
+  /webui/schedule/{id}/run         # 立即运行
+  /webui/restart                   # 重启后端（Admin only）
+/webui/redis/*   # Redis 数据浏览器（Admin 只读，redis_browser_router.py）
+  /webui/redis/keys                # key 列表（cursor 分页）
+  /webui/redis/key                 # 单 key 数据（分页）
+/agent/*       # agentscope 原生 Agent API（JWT 鉴权）
+/sessions/*    # agentscope 原生 Session API（JWT 鉴权）
+/credential/*  # agentscope 原生 Credential API（JWT 鉴权）
+/schedule/*    # agentscope 原生 Schedule API（JWT 鉴权）
+/workspace/*   # agentscope 原生 Workspace API（JWT 鉴权）
+/chat/         # agentscope 原生 Chat trigger（JWT 鉴权）
 /logs/*        # 日志查看（自定义）
 ```
 
@@ -143,23 +181,30 @@ npm run build --prefix frontend  # 生产构建（TypeScript 检查 + Vite）
 |---|---|
 | Workspace `.mcp` 文件 | 修改 `default_mcps` 后，需手动删除 `workspaces/*/` 下的 `.mcp` 文件，否则旧配置仍生效 |
 | 新 session 响应慢 | 通常是 workspace 初始化 MCP 导致。确认 `backend/main.py` 的 `default_mcps = []` |
-| SSE 无输出 | 检查：1) Session 有 model config？2) `x-user-id` header 发送了？3) SSE URL 直连后端（非 proxy）？ |
+| SSE 无输出 | 检查：1) Session 有 model config？2) `x-user-id` header 发送了？3) SSE URL 直连后端（非 proxy）？4) agent 的 MCP/Skill 已通过 session-workspace 注入？ |
 | 422 on stream | 大概率是 JWT 缺失（`Authorization: Bearer`），stream 端点现在 JWT 鉴权（依赖 override） |
+| 401 on /workspace/* | 内部 httpx 调用没透传 Authorization 头。`apply_session_workspace`/`inject_session_skill` 必须从 request 取 JWT 转发 |
 | 模型调用 409 | Session 正在处理中，用户重复发消息。前端应在 `sseState.streaming = true` 时禁用发送 |
+| 非 admin `/` 唤不起 skill | 对话页 skill picker 须用 `getAgentSkillsFull`（按绑定路径解析），不能用 `getSkillLib`（依赖调用方 skill-dirs，非 admin 为空） |
+| MCP "Not authenticated" | 旧 MCP 条目无 auth 字段（迁移自旧版）。进 MCP 页编辑，补 auth_type + auth_token |
+| admin 看不到彼此 MCP/Skill | 已通过共享命名空间解决（owner=`"admin"`）。若仍为空，检查 `migrate_admin_shared_namespace()` 是否执行、旧 per-user key 是否已合并删除 |
 
 ---
 
 ## 文件说明
 
 ```
-backend/main.py              # 后端入口，引用 agentscope create_app + 注册三个 router
-backend/auth_router.py       # 用户认证，sha256_crypt 哈希（bcrypt 4.x 有兼容性问题）
+backend/main.py              # 后端入口，引用 agentscope create_app + 注册四个 router + 启动迁移
+backend/auth_router.py       # 用户认证，sha256_crypt 哈希（bcrypt 4.x 有兼容性问题）；webui_user_id 依赖覆盖
 backend/users_router.py      # 用户 CRUD
-backend/webui_router.py      # Webui 专属 Redis 数据层
+backend/webui_router.py      # Webui 专属 Redis 数据层（模型配置/MCP/Skill/预设问题/session-workspace/Schedule）
+backend/redis_browser_router.py  # Redis 数据浏览器（Admin 只读）
 
 frontend/src/api/client.ts    # axios 实例，拦截器注入 Authorization + x-user-id
-frontend/src/api/webui.ts     # webui 专属接口（模型配置、MCP/Skill 库等）
+frontend/src/api/webui.ts     # webui 专属接口（模型配置、MCP 库编辑/测试、Skill 安装、预设问题、Redis 浏览等）
 frontend/src/features/chat/useSSEStream.ts  # SSE 核心（直连后端，fetch + ReadableStream）
-frontend/src/features/chat/ChatPage.tsx     # Chat 主页（含发送逻辑、模型检查、resume 功能）
+frontend/src/features/chat/ChatPage.tsx     # Chat 主页（发送逻辑、模型检查、resume、预设问题 chips、skill picker）
+frontend/src/features/agents/AgentsPage.tsx # Agent CRUD + 配置（含预设问题编辑、MCP/Skill 绑定）
+frontend/src/features/mcp/McpPage.tsx       # MCP 库（注册/编辑/测试/启停，pill 切换）
 frontend/src/store/auth.ts    # Zustand auth store（token、role、boundAgentIds）
 ```

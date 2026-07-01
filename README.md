@@ -8,23 +8,23 @@
 
 | 模块 | 说明 |
 |---|---|
-| **Chat** | 与 Agent 对话，流式输出，支持会话恢复 |
+| **Chat** | 与 Agent 对话，流式输出，支持会话恢复；空状态展示预设问题引导 |
 | **Sessions** | 查看历史会话，继续对话，重命名/删除 |
-| **Agents** | 创建、编辑 Agent，绑定模型配置 |
+| **Agents** | 创建、编辑 Agent，绑定模型配置、MCP、Skill、预设问题 |
 | **Credentials** | 管理 API Key（DashScope / Anthropic / OpenAI 等 8 家），查看模型列表，设置默认模型 |
-| **MCP** | 注册 MCP Server（stdio / SSE / Streamable HTTP） |
-| **Skills** | 管理 Skill 库（按路径注册） |
-| **Schedules** | 定时任务（Cron），Agent 自动定期执行 |
+| **MCP** | 注册 / 编辑 MCP Server（stdio / SSE / Streamable HTTP），支持认证（none/bearer/api_key/oauth），测试连接，启停 |
+| **Skills** | 管理 Skill 库（按路径注册），支持 `npx skills add` 在线安装（admin only） |
+| **Schedules** | 定时任务（Cron），Agent 自动定期执行，可立即运行 |
 | **Logs** | 后端日志查看（App log / Service log） |
-| **Settings** | 主题切换（light / dark / system） |
+| **Settings** | 主题切换（light / dark / system）、Skill 路径管理、Redis 数据浏览器、后端重启 |
 | **Users** | 用户管理（Admin 专属），绑定 Agent 权限 |
 
 ### 角色权限
 
 | 角色 | 权限 |
 |---|---|
-| **admin** | 全部功能 |
-| **user** | 仅 Chat + Sessions（只见绑定的 Agent 及自己的会话） |
+| **admin** | 全部功能；多个 admin **共享同一套 MCP 库 / Skill 路径 / Skill 禁用集** |
+| **user** | 仅 Chat + Sessions（只见绑定的 Agent 及自己的会话）；不能用 stdio MCP、不能安装 Skill |
 
 ---
 
@@ -98,11 +98,12 @@ npm run build --prefix frontend      # 构建生产版本
 agentscope-webui/
 │
 ├── backend/                        # Python 后端（FastAPI）
-│   ├── main.py                     # 应用入口：注册 AgentScope app + 三个路由 + 日志配置
-│   ├── auth_router.py              # JWT 认证：POST /auth/login、GET /auth/me
+│   ├── main.py                     # 应用入口：注册 AgentScope app + 四个路由 + 日志配置 + 启动迁移
+│   ├── auth_router.py              # JWT 认证：POST /auth/login、GET /auth/me；webui_user_id 依赖覆盖（全局 JWT 鉴权）
 │   ├── users_router.py             # 用户 CRUD（Admin only）：GET/POST/PATCH/DELETE /users/
-│   ├── webui_router.py             # Webui 专属数据层：模型配置、MCP 库、Skill 库、定时任务代理
-│   └── pyproject.toml              # Python 依赖声明（文档用途，实际安装在 agentscope-app/.venv）
+│   ├── webui_router.py             # Webui 专属数据层：模型配置、MCP 库（含认证/编辑/测试）、Skill 库（含安装）、预设问题、Schedule 代理、session-workspace 注入
+│   ├── redis_browser_router.py     # Redis 数据浏览器（Admin 只读）：/webui/redis/keys、/webui/redis/key
+│   └── pyproject.toml              # Python 依赖声明（文档用途，实际安装在项目根 .venv）
 │
 ├── frontend/                       # React 前端（Vite + TypeScript）
 │   ├── src/
@@ -114,19 +115,19 @@ agentscope-webui/
 │   │   │   ├── schedules.ts        # 定时任务
 │   │   │   ├── users.ts            # 用户管理
 │   │   │   ├── auth.ts             # 登录 / logout
-│   │   │   └── webui.ts            # Webui 专属接口（模型配置、MCP/Skill 库等）
+│   │   │   └── webui.ts            # Webui 专属接口（模型配置、MCP 库编辑/测试、Skill 安装、预设问题、Redis 浏览等）
 │   │   │
 │   │   ├── features/               # 按功能拆分的页面模块（每个子目录对应一个路由页面）
 │   │   │   ├── auth/               # 登录页
 │   │   │   ├── chat/               # 对话页：SSE 流式输出、消息渲染、会话恢复
-│   │   │   ├── agents/             # Agent 创建 / 编辑 / 删除，绑定模型配置
+│   │   │   ├── agents/             # Agent 创建 / 编辑 / 删除，绑定模型配置、MCP/Skill、预设问题
 │   │   │   ├── credentials/        # API Key 管理，查看模型列表，设置默认模型
 │   │   │   ├── sessions/           # 历史会话列表，继续对话，重命名 / 删除
-│   │   │   ├── mcp/                # MCP Server 注册（stdio / SSE / Streamable HTTP）
-│   │   │   ├── skills/             # Skill 库管理（按路径注册）
-│   │   │   ├── schedules/          # 定时任务（Cron），Agent 定期自动执行
+│   │   │   ├── mcp/                # MCP Server 注册 / 编辑 / 测试 / 启停（stdio / SSE / Streamable HTTP）
+│   │   │   ├── skills/             # Skill 库管理（按路径注册 + npx 安装）
+│   │   │   ├── schedules/          # 定时任务（Cron），Agent 定期自动执行，可立即运行
 │   │   │   ├── logs/               # 后端日志查看（App log / Service log）
-│   │   │   ├── settings/           # 主题切换（light / dark / system）
+│   │   │   ├── settings/           # 主题切换 / Skill 路径管理 / Redis 数据浏览器 / 后端重启
 │   │   │   └── users/              # 用户管理（Admin 专属），绑定 Agent 权限
 │   │   │
 │   │   ├── layouts/                # 全局布局：侧边栏导航、用户菜单
@@ -162,15 +163,22 @@ agentscope-webui/
 
 ## Redis 数据命名空间
 
+> `owner` 含义：admin → 固定字符串 `"admin"`（多个 admin 共享）；非 admin → `user.id`（隔离）。Agent 级配置按 `agent_id` 命名，跨用户共享，由 RBAC 把关。
+
 | 前缀 | 内容 |
 |---|---|
-| `agentscope:user:webui:*` | agentscope 原生数据（Agent、Session、Credential、Schedule） |
-| `webui:user:*` | 用户账号（username、role、bound_agent_ids） |
+| `agentscope:user:webui:*` | agentscope 原生数据（Agent、Session、Credential、Schedule、Workspace） |
+| `webui:user:id:{user_id}` | 用户账号 JSON（username、role、bound_agent_ids、hashed_password） |
+| `webui:user:name:{username}` | username → user_id 索引 |
+| `webui:config:default-model:{user_id}` | 用户默认模型（按 user.id，不共享） |
 | `webui:config:agent-model:{agent_id}` | 每个 Agent 的模型配置 |
-| `webui:config:default-model:{user_id}` | 用户默认模型 |
+| `webui:config:agent-mcps:{agent_id}` | Agent 绑定的 MCP 名列表 |
+| `webui:config:agent-skills:{agent_id}` | Agent 绑定的 skill 路径列表 |
+| `webui:config:agent-questions:{agent_id}` | Agent 预设问题（最多 5） |
 | `webui:config:cred-models:{cred_id}` | Credential 的自定义模型名列表 |
-| `webui:config:mcp-lib:{user_id}` | 用户的 MCP Server 库 |
-| `webui:config:skill-lib:{user_id}` | 用户的 Skill 库 |
+| `webui:config:mcp-lib:{owner}` | MCP Server 库（admin 共享 / 非 admin 隔离） |
+| `webui:config:skill-dirs:{owner}` | Skill 根目录列表（admin 共享 / 非 admin 隔离） |
+| `webui:config:skill-disabled:{owner}` | 禁用的 skill 路径集（admin 共享 / 非 admin 隔离） |
 | `webui:user-sessions:{user_id}` | 用户的 Session 归属记录 |
 
 ---
@@ -182,6 +190,17 @@ agentscope-webui/
 3. **Agents** → 创建 Agent，编辑时选择 Credential + Model
 4. **Chat** → 选中 Agent，发起对话
 5. **Users** → 创建普通用户并绑定 Agent（可选）
+
+---
+
+## 架构与安全
+
+- **多租户叠加 RBAC**：agentscope 原生用共享 `x-user-id` 命名空间，webui 在其上叠加自己的 JWT 用户体系 + RBAC（`webui:user:*`）。所有 agentscope 原生端点经 `dependency_overrides` 全局替换成 JWT 鉴权——必须带有效 webui JWT 才放行，客户端伪造的 `x-user-id` 不再可信。
+- **Admin 共享配置**：MCP 库 / Skill 路径 / Skill 禁用集按 `owner` 命名，admin 共享固定 `owner="admin"`，非 admin 按 `user.id` 隔离。启动时 `migrate_admin_shared_namespace()` 幂等迁移旧 per-admin 数据到共享 key。
+- **服务端密钥**：MCP 的 `auth_token` 存 Redis，GET 响应剥离，编辑留空则保留原值，重测按名加载——密钥不下发浏览器。
+- **stdio MCP / Skill 安装仅 admin**：stdio 在后端主机执行命令有 RCE 风险；`npx skills add` 同理。远程 sse/streamable-http 传输全员可用。
+- **后端默认绑 `127.0.0.1`**：外网暴露需设 `BACKEND_HOST=0.0.0.0` 且必须放反代后面。
+- **SSE 直连后端**：流式输出绕过 Vite proxy（其 gzip 中间件会缓冲 SSE），前端 `useSSEStream.ts` 把 stream URL 转成后端直连地址。
 
 ---
 
