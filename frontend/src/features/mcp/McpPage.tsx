@@ -4,7 +4,7 @@ import type { TFunction } from 'i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { webuiApi, type McpDef, type McpTransport, type McpAuthType, type McpTestResult } from '@/api/webui'
 import { useAuthStore } from '@/store/auth'
-import { Trash2, ChevronRight, CheckCircle2, XCircle, Loader2, Lock, Eye, EyeOff } from 'lucide-react'
+import { Trash2, ChevronRight, CheckCircle2, XCircle, Loader2, Lock, Eye, EyeOff, Pencil } from 'lucide-react'
 
 const PAGE = 8
 
@@ -53,6 +53,23 @@ function formToMcpDef(form: FormState): McpDef {
   }
 }
 
+// Populate the form from a saved MCP for editing. auth_token is stripped from
+// GET responses, so it's left empty here — the backend keeps the stored token
+// when the caller sends an empty one (see PUT /mcp-lib/{name}).
+function fromMcpDef(m: McpDef): FormState {
+  return {
+    name: m.name,
+    transport: m.transport,
+    command: m.command ?? '',
+    args: (m.args ?? []).join(' '),
+    url: m.url ?? '',
+    is_stateful: m.is_stateful,
+    auth_type: m.auth_type ?? 'none',
+    auth_token: '',
+    auth_header_name: m.auth_header_name ?? '',
+  }
+}
+
 function isFormValid(form: FormState): boolean {
   if (!form.name.trim()) return false
   if (form.transport === 'stdio') return !!form.command.trim()
@@ -73,6 +90,7 @@ export default function McpPage() {
   const isAdmin = role === 'admin'
 
   const [showAdd, setShowAdd] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)  // name being edited, null = register
   const [form, setForm] = useState<FormState>(() => buildEmpty(isAdmin))
   const [page, setPage] = useState(0)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -83,6 +101,10 @@ export default function McpPage() {
 
   const addMut = useMutation({
     mutationFn: () => webuiApi.addMcp(formToMcpDef(form)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['mcp-lib'] }); closeDialog() },
+  })
+  const updateMut = useMutation({
+    mutationFn: () => webuiApi.updateMcp(editing!, formToMcpDef(form)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mcp-lib'] }); closeDialog() },
   })
   const toggleMut = useMutation({
@@ -97,18 +119,44 @@ export default function McpPage() {
     },
   })
   const testMut = useMutation({
-    mutationFn: () => webuiApi.testMcp(formToMcpDef(form)),
+    // In edit mode with no new token entered, test the saved def (the server
+    // resolves the stored secret) — testing the form's empty token would fail
+    // for auth'd MCPs. If a new token was typed, test the form as-is.
+    mutationFn: () => editing && !form.auth_token
+      ? webuiApi.testSavedMcp(editing)
+      : webuiApi.testMcp(formToMcpDef(form)),
     onSuccess: (data) => setTestResult(data),
     onError: (err: unknown) => setTestResult({ ok: false, error: err instanceof Error ? err.message : t('common.error.requestFailed') }),
   })
 
   const closeDialog = () => {
     setShowAdd(false)
+    setEditing(null)
     setForm(buildEmpty(isAdmin))
     setTestResult(null)
     setShowToken(false)
     testMut.reset()
   }
+
+  const openRegister = () => {
+    setForm(buildEmpty(isAdmin))
+    setEditing(null)
+    setTestResult(null)
+    setShowToken(false)
+    testMut.reset()
+    setShowAdd(true)
+  }
+
+  const openEdit = (mcp: McpDef) => {
+    setForm(fromMcpDef(mcp))
+    setEditing(mcp.name)
+    setTestResult(null)
+    setShowToken(false)
+    testMut.reset()
+    setShowAdd(true)
+  }
+
+  const saveMut = editing ? updateMut : addMut
 
   // String fields share one handler; union-typed selects get their own so the
   // value is cast to the right literal type (selects only emit those values).
@@ -141,7 +189,7 @@ export default function McpPage() {
     <div className="flex flex-col h-full">
       <div className="px-6 border-b flex items-center shrink-0" style={{ borderColor: 'var(--as-hairline)', height: 'var(--as-bar-h)', background: 'var(--as-parchment)' }}>
         <h2 className="text-lg font-semibold tracking-tight flex-1" style={{ color: 'var(--as-ink)' }}>{t('mcp.title')}</h2>
-        <button onClick={() => { setForm(buildEmpty(isAdmin)); setShowAdd(true) }} className="as-btn as-btn-primary as-btn-sm">{t('mcp.button.register')}</button>
+        <button onClick={openRegister} className="as-btn as-btn-primary as-btn-sm">{t('mcp.button.register')}</button>
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-2">
         {isLoading && <p className="text-sm" style={{ color: 'var(--as-ink-48)' }}>{t('common.status.loading')}</p>}
@@ -152,6 +200,7 @@ export default function McpPage() {
             isExpanded={expanded === m.name}
             onToggleExpand={() => setExpanded(expanded === m.name ? null : m.name)}
             onToggleEnabled={(is_enabled) => toggleMut.mutate({ name: m.name, is_enabled })}
+            onEdit={() => openEdit(m)}
             onDelete={() => deleteMut.mutate(m.name)}
           />
         ))}
@@ -173,11 +222,12 @@ export default function McpPage() {
       {showAdd && (
         <div className="as-overlay">
           <div className="as-dialog" style={{ minWidth: 460 }}>
-            <h3 className="text-base font-semibold">{t('mcp.dialog.register')}</h3>
+            <h3 className="text-base font-semibold">{editing ? t('mcp.dialog.edit') : t('mcp.dialog.register')}</h3>
 
             <div>
               <label className={labelCls} style={labelStyle}>{t('mcp.form.namePlaceholder')}</label>
-              <input className={inputCls} style={inputStyle} placeholder={t('mcp.form.namePlaceholder')} value={form.name} onChange={setStr('name')} />
+              <input className={inputCls} style={inputStyle} placeholder={t('mcp.form.namePlaceholder')}
+                value={form.name} onChange={setStr('name')} disabled={!!editing} />
             </div>
 
             <div>
@@ -232,7 +282,7 @@ export default function McpPage() {
                       <input
                         type={showToken ? 'text' : 'password'}
                         className={inputCls} style={inputStyle}
-                        placeholder={t('mcp.auth.tokenPlaceholder')}
+                        placeholder={editing ? t('mcp.auth.tokenKeep') : t('mcp.auth.tokenPlaceholder')}
                         value={form.auth_token}
                         onChange={setStr('auth_token')}
                       />
@@ -286,9 +336,9 @@ export default function McpPage() {
                 className="as-btn as-btn-sm" style={{ border: '1px solid var(--as-hairline)' }}>
                 {testMut.isPending ? t('mcp.button.testing') : t('mcp.button.test')}
               </button>
-              <button onClick={() => addMut.mutate()} disabled={!formValid || addMut.isPending || (form.transport === 'stdio' && !isAdmin)}
+              <button onClick={() => saveMut.mutate()} disabled={!formValid || saveMut.isPending || (form.transport === 'stdio' && !isAdmin)}
                 className="as-btn as-btn-primary">
-                {addMut.isPending ? t('common.status.saving') : t('common.button.save')}
+                {saveMut.isPending ? t('common.status.saving') : t('common.button.save')}
               </button>
             </div>
           </div>
@@ -307,10 +357,11 @@ interface McpCardProps {
   isExpanded: boolean
   onToggleExpand: () => void
   onToggleEnabled: (is_enabled: boolean) => void
+  onEdit: () => void
   onDelete: () => void
 }
 
-function McpCard({ mcp, isExpanded, onToggleExpand, onToggleEnabled, onDelete }: McpCardProps) {
+function McpCard({ mcp, isExpanded, onToggleExpand, onToggleEnabled, onEdit, onDelete }: McpCardProps) {
   const { t } = useTranslation()
   // Re-test via the name-based endpoint: GET /mcp-lib strips auth_token, so the
   // server resolves the saved def (with secret) itself — the browser never
@@ -328,10 +379,14 @@ function McpCard({ mcp, isExpanded, onToggleExpand, onToggleEnabled, onDelete }:
   return (
     <div className="as-card as-card-hover overflow-hidden">
       <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={onToggleExpand}>
-        <input type="checkbox" checked={mcp.is_enabled}
-          onChange={e => onToggleEnabled(e.target.checked)}
-          onClick={e => e.stopPropagation()}
-          style={{ accentColor: 'var(--as-primary)' }} />
+        <button
+          onClick={e => { e.stopPropagation(); onToggleEnabled(!mcp.is_enabled) }}
+          className="shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors"
+          style={mcp.is_enabled
+            ? { background: 'var(--as-primary)', color: '#fff' }
+            : { background: 'var(--as-hairline)', color: 'var(--as-ink-48)' }}>
+          {mcp.is_enabled ? t('mcp.badge.enabled') : t('mcp.badge.disabled')}
+        </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-medium" style={{ color: 'var(--as-ink)' }}>{mcp.name}</p>
@@ -350,6 +405,9 @@ function McpCard({ mcp, isExpanded, onToggleExpand, onToggleEnabled, onDelete }:
             transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
             transition: 'transform 200ms',
           }} />
+        <button onClick={e => { e.stopPropagation(); onEdit() }} className="as-btn as-btn-ghost as-btn-sm" style={{ padding: '4px' }} title={t('mcp.button.edit')}>
+          <Pencil size={13} />
+        </button>
         <button onClick={e => { e.stopPropagation(); onDelete() }} className="as-btn as-btn-danger"><Trash2 size={13} /></button>
       </div>
 

@@ -1,7 +1,7 @@
 """webui-specific Redis data layer — model configs, MCP lib, Skill lib, schedule proxy."""
 import asyncio, json, httpx, os, re, shlex, shutil
 from typing import Literal, Optional
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from auth_router import UserInDB, admin_required, current_user, _r
 
@@ -351,7 +351,7 @@ def _mcpdef_to_client(m: dict) -> dict:
 
 
 @router.post("/session-workspace")
-async def apply_session_workspace(body: dict, user: UserInDB = Depends(current_user)):
+async def apply_session_workspace(body: dict, request: Request, user: UserInDB = Depends(current_user)):
     """Inject an agent's configured MCPs and Skills into the session workspace.
 
     Idempotent: skills use SHA-256 dedup internally; MCPs are only added
@@ -362,7 +362,12 @@ async def apply_session_workspace(body: dict, user: UserInDB = Depends(current_u
     if not agent_id or not session_id:
         raise HTTPException(400, "agent_id and session_id required")
 
+    # Forward the caller's JWT so agentscope's native endpoints (which are now
+    # JWT-gated via dependency_overrides) accept the internal workspace calls.
     headers = {"x-user-id": "webui"}
+    auth = request.headers.get("Authorization")
+    if auth:
+        headers["Authorization"] = auth
     mcps_added = 0
     mcp_errors: list[dict] = []
     skills_added = 0
@@ -436,7 +441,7 @@ async def apply_session_workspace(body: dict, user: UserInDB = Depends(current_u
 
 
 @router.post("/session-skill")
-async def inject_session_skill(body: dict, _: UserInDB = Depends(current_user)):
+async def inject_session_skill(body: dict, request: Request, _: UserInDB = Depends(current_user)):
     """Inject a single skill into an active session workspace.
 
     Used by the chat skill-picker when the user invokes a skill that isn't
@@ -454,6 +459,9 @@ async def inject_session_skill(body: dict, _: UserInDB = Depends(current_user)):
     import pathlib
     skill_dir = str(pathlib.Path(skill_path).parent)
     headers = {"x-user-id": "webui"}
+    auth = request.headers.get("Authorization")
+    if auth:
+        headers["Authorization"] = auth
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{AGENTSCOPE_BASE}/workspace/skill",
@@ -559,6 +567,47 @@ async def toggle_mcp(name: str, body: dict, user: UserInDB = Depends(current_use
     ]
     _set_list(_mcp_key(_config_owner(user)), updated)
     return next((m for m in updated if m["name"] == name), None)
+
+
+@router.put("/mcp-lib/{name}")
+async def update_mcp(name: str, body: McpDef, user: UserInDB = Depends(current_user)):
+    """Update an existing MCP's editable fields.
+
+    ``name`` is immutable (it's the Redis key and agent bindings reference it by
+    name), so the path name wins over the body. ``is_enabled`` is managed by the
+    toggle endpoint and preserved here. ``auth_token`` is a server-side secret:
+    if the caller sends an empty token the stored one is kept, so editing other
+    fields doesn't force re-entering it; switching auth_type to "none" clears it.
+    """
+    owner = _config_owner(user)
+    mcps = _get_list(_mcp_key(owner))
+    raw = next((m for m in mcps if m.get("name") == name), None)
+    if not raw:
+        raise HTTPException(404, f"MCP '{name}' not found")
+
+    if body.auth_type == "none":
+        new_token = ""
+    elif body.auth_token:
+        new_token = body.auth_token
+    else:
+        new_token = raw.get("auth_token", "")
+
+    updated = McpDef(
+        name=name,
+        transport=body.transport,
+        command=body.command,
+        args=body.args,
+        url=body.url,
+        is_stateful=body.is_stateful,
+        is_enabled=raw.get("is_enabled", True),
+        auth_type=body.auth_type,
+        auth_token=new_token,
+        auth_header_name=body.auth_header_name,
+    )
+    _require_stdio_admin(updated, user)
+    _validate_mcp_fields(updated)
+    _set_list(_mcp_key(owner), [updated.model_dump() if m.get("name") == name else m for m in mcps])
+    return {**updated.model_dump(), "auth_token": ""}
 
 
 @router.delete("/mcp-lib/{name}", status_code=204)

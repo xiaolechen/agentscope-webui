@@ -158,9 +158,10 @@
   },
   "mcp": {
     "title": "MCP Servers",
-    "button": { "register": "+ Register", "testing": "Testing…", "test": "Test" },
+    "button": { "register": "+ Register", "testing": "Testing…", "test": "Test", "edit": "Edit" },
+    "badge": { "enabled": "Enabled", "disabled": "Disabled" },
     "empty": { "noServers": "No MCP servers registered." },
-    "dialog": { "register": "Register MCP Server" },
+    "dialog": { "register": "Register MCP Server", "edit": "Edit MCP Server" },
     "form": {
       "namePlaceholder": "Name (unique)",
       "transport": "Transport",
@@ -178,6 +179,7 @@
       "apiKey": "API Key",
       "oauth": "OAuth",
       "tokenPlaceholder": "Token / Key",
+      "tokenKeep": "Leave blank to keep the current token",
       "headerNamePlaceholder": "Header name (default: X-API-Key)",
       "oauthHint": "Enter the OAuth access token. Refresh is not managed by this app."
     },
