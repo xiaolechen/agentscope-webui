@@ -83,23 +83,40 @@ def _login_rate_key(ip: str) -> str:
     return f"webui:login-rate:{ip}"
 
 
+def _client_ip(request: Request) -> str:
+    """Extract client IP, honouring X-Forwarded-For when TRUSTED_PROXY=true.
+
+    When the backend is exposed behind a reverse proxy (BACKEND_HOST=0.0.0.0),
+    request.client.host is the proxy's loopback address, making all users share
+    one rate-limit bucket. Set TRUSTED_PROXY=true and ensure the proxy strips
+    and re-adds X-Forwarded-For so it cannot be spoofed by clients.
+    """
+    if os.getenv("TRUSTED_PROXY", "").lower() in ("1", "true", "yes"):
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def check_login_rate(ip: str) -> None:
-    """Raise 429 once an IP exceeds LOGIN_MAX_ATTEMPTS within the window."""
+    """Raise 429 once an IP exceeds LOGIN_MAX_ATTEMPTS within the window.
+
+    Uses a Redis pipeline so INCR and EXPIRE are sent atomically — without a
+    pipeline, a crash between the two commands would leave the key without a
+    TTL, permanently blocking the IP.
+    """
     key = _login_rate_key(ip)
     r = _r()
-    count = r.incr(key)
-    if count == 1:
-        r.expire(key, LOGIN_WINDOW_SECONDS)
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, LOGIN_WINDOW_SECONDS)
+    count, _ = pipe.execute()
     if count > LOGIN_MAX_ATTEMPTS:
+        logger.warning("login rate-limit hit: ip=%s count=%d", ip, count)
         raise HTTPException(
             status_code=429,
             detail="Too many login attempts. Please try again later.",
         )
-
-
-def reset_login_rate(ip: str) -> None:
-    """Clear the counter after a successful login (don't penalise success)."""
-    _r().delete(_login_rate_key(ip))
 
 
 def hash_password(plain: str) -> str:
@@ -149,7 +166,8 @@ async def current_user(token: str = Depends(oauth2_scheme)) -> UserInDB:
         uid: str = payload.get("sub")
         if not uid:
             raise exc
-    except JWTError:
+    except JWTError as e:
+        logger.warning("JWT decode failed: %s", e)
         raise exc
     user = get_user_by_id(uid)
     if not user:
@@ -159,6 +177,7 @@ async def current_user(token: str = Depends(oauth2_scheme)) -> UserInDB:
 
 async def admin_required(user: UserInDB = Depends(current_user)) -> UserInDB:
     if user.role != "admin":
+        logger.warning("admin-required forbidden: user=%s", user.id)
         raise HTTPException(status_code=403, detail="Admin only")
     return user
 
@@ -184,13 +203,17 @@ async def webui_user_id(user: UserInDB = Depends(current_user)) -> str:
 
 @router.post("/login", response_model=Token)
 async def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     check_login_rate(client_ip)
     user = get_user(form.username)
     if not user or not verify_password(form.password, user.hashed_password):
+        logger.warning("login failed: username=%s ip=%s", form.username, client_ip)
         raise HTTPException(status_code=400, detail="Incorrect username or password")
-    reset_login_rate(client_ip)
+    # Do NOT reset the counter on success — deleting it would give an attacker a
+    # fresh window after each successful login, allowing unlimited brute-force
+    # attempts spread across sessions. Let the TTL expire naturally.
     token = create_token({"sub": user.id, "role": user.role})
+    logger.info("login success: username=%s role=%s ip=%s", user.username, user.role, client_ip)
     return Token(access_token=token, token_type="bearer", role=user.role, user_id=user.id)
 
 

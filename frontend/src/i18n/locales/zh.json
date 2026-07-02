@@ -77,7 +77,7 @@
       "presetHint": "选择一个预设问题开始对话"
     },
     "status": { "loadingModelConfig": "正在加载模型配置…" },
-    "button": { "createAgent": "创建 Agent", "agent": "Agent", "send": "发送" },
+    "button": { "createAgent": "创建 Agent", "agent": "Agent", "send": "发送", "stop": "终止" },
     "warning": {
       "noModel": "尚未配置模型。前往 ",
       "goToAgentsEdit": "Agents → 编辑",

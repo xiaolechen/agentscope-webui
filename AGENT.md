@@ -12,8 +12,14 @@ agentscope-webui/
 │   ├── main.py                       # 应用入口，注册全部路由 + 启动迁移
 │   ├── auth_router.py                # /auth/*  JWT 认证 + get_current_user_id 依赖覆盖
 │   ├── users_router.py               # /users/* 用户管理（Admin only）
-│   ├── webui_router.py               # /webui/* Webui 专属接口
-│   └── redis_browser_router.py       # /webui/redis/* Redis 数据浏览器（Admin 只读）
+│   ├── mcp_router.py                 # /webui/mcp-lib/* MCP 库
+│   ├── skill_router.py               # /webui/skill-lib/*、/webui/skill-dirs Skill 库
+│   ├── session_router.py             # /webui/session-* Session 归属 + workspace 注入
+│   ├── schedule_router.py            # /webui/schedule Schedule 代理
+│   ├── agent_config_router.py        # /webui/agent-* Agent 级配置
+│   ├── model_router.py               # /webui/me/default-model、/webui/agent-model/* 模型配置
+│   ├── redis_browser_router.py       # /webui/redis/* Redis 数据浏览器（Admin 只读）
+│   └── webui_helpers.py              # 共享工具（Redis key helpers、PRODUCTION_MODE 常量）
 │
 └── frontend/                         # React 前端（Vite，监听 :5173）
     └── src/
@@ -290,3 +296,15 @@ GET  /webui/redis/key                # 单 key 数据（分页）
 | Stream 为空（只有 `:`） | Session 没有 `chat_model_config` | PATCH session 写入模型配置 |
 | Stream 为空（没有 TEXT_BLOCK_DELTA） | model config 的 credential_id 无效，或 agent 绑定的 MCP/Skill 未注入 | 检查凭据有效；调 `POST /webui/session-workspace` 注入 |
 | MCP "Not authenticated" | 旧 MCP 条目无 auth 字段（迁移自旧版） | PUT `/webui/mcp-lib/{name}` 补 auth_type + auth_token |
+
+---
+
+## AI 编码约束
+
+> 以下约束面向生成或修改此项目代码的 AI Agent。
+
+- **不修改 agentscope 源码**：只调用 `agentscope.app` / `agentscope.mcp` / `agentscope.permission` 的公开 API；AgentScope 进程是 agent runtime，webui 通过 REST API 管理其生命周期
+- **新端点 = 新 router 文件**：按业务域放入对应 router（MCP → `mcp_router.py`，Skill → `skill_router.py`，Session → `session_router.py`，等），不修改已有 router 的职责范围；在 `main.py` 用 `include_router` 注册
+- **Redis key 字符串**：所有 Redis key 通过 `webui_helpers.py` 的 `_xxx_key()` 函数生成；新 key 模式须先在 `webui_helpers.py` 添加 helper 函数
+- **内部 httpx 调用必须透传 JWT**：所有调用 agentscope 原生端点（`/workspace/*`、`/sessions/*` 等）的 httpx 请求，必须用 `_forward_auth_headers(request)` 构造 headers，否则返 401
+- **PRODUCTION_MODE**：`PRODUCTION_MODE=true` 时，`session_router.py` 会过滤 stdio MCP 注入并设置受限 PermissionMode；新增的 MCP/Session 相关逻辑需遵守此开关

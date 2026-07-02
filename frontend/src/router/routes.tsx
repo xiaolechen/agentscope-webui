@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import PrivateRoute from './PrivateRoute'
 import AppLayout from '@/layouts/AppLayout'
 import LoginPage from '@/features/auth/LoginPage'
+import ErrorBoundary from '@/components/ErrorBoundary'
 
 const Chat        = lazy(() => import('@/features/chat/ChatPage'))
 const Sessions    = lazy(() => import('@/features/sessions/SessionsPage'))
@@ -22,7 +23,9 @@ const Fallback = () => (
 )
 
 const wrap = (C: React.LazyExoticComponent<() => React.JSX.Element>) => (
-  <Suspense fallback={<Fallback />}><C /></Suspense>
+  <ErrorBoundary>
+    <Suspense fallback={<Fallback />}><C /></Suspense>
+  </ErrorBoundary>
 )
 
 export const router = createBrowserRouter([

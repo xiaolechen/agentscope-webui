@@ -77,7 +77,7 @@
       "presetHint": "Pick a preset question to start"
     },
     "status": { "loadingModelConfig": "Loading model configuration…" },
-    "button": { "createAgent": "Create Agent", "agent": "Agent", "send": "Send" },
+    "button": { "createAgent": "Create Agent", "agent": "Agent", "send": "Send", "stop": "Stop" },
     "warning": {
       "noModel": "No model configured. Go to ",
       "goToAgentsEdit": "Agents → Edit",

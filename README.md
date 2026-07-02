@@ -69,7 +69,7 @@ bash start.sh
 └──────────────────────────────────────────┘
 ```
 
-### 4. 默认登录账号
+### 3. 默认登录账号
 
 ```
 用户名: admin
@@ -98,11 +98,17 @@ npm run build --prefix frontend      # 构建生产版本
 agentscope-webui/
 │
 ├── backend/                        # Python 后端（FastAPI）
-│   ├── main.py                     # 应用入口：注册 AgentScope app + 四个路由 + 日志配置 + 启动迁移
+│   ├── main.py                     # 应用入口：注册全部 router + JWT 依赖覆盖 + 日志配置 + 启动迁移
 │   ├── auth_router.py              # JWT 认证：POST /auth/login、GET /auth/me；webui_user_id 依赖覆盖（全局 JWT 鉴权）
 │   ├── users_router.py             # 用户 CRUD（Admin only）：GET/POST/PATCH/DELETE /users/
-│   ├── webui_router.py             # Webui 专属数据层：模型配置、MCP 库（含认证/编辑/测试）、Skill 库（含安装）、预设问题、Schedule 代理、session-workspace 注入
+│   ├── mcp_router.py               # MCP 库（注册/编辑/测试/启停）：/webui/mcp-lib/*
+│   ├── skill_router.py             # Skill 库（扫描/启停/npx 安装）：/webui/skill-lib/*、/webui/skill-dirs
+│   ├── session_router.py           # Session 归属 + workspace 注入（MCP+Skill+PermissionMode）
+│   ├── schedule_router.py          # Schedule 创建代理（注入 model config）：/webui/schedule
+│   ├── agent_config_router.py      # Agent 级配置（模型/MCP绑定/Skill绑定/预设问题）：/webui/agent-*
+│   ├── model_router.py             # 用户/Agent 模型配置：/webui/me/default-model、/webui/agent-model/*
 │   ├── redis_browser_router.py     # Redis 数据浏览器（Admin 只读）：/webui/redis/keys、/webui/redis/key
+│   ├── webui_helpers.py            # 共享工具：Redis key helpers、_config_owner()、PRODUCTION_MODE 常量
 │   └── pyproject.toml              # Python 依赖声明（文档用途，实际安装在项目根 .venv）
 │
 ├── frontend/                       # React 前端（Vite + TypeScript）
@@ -211,3 +217,17 @@ agentscope-webui/
 **后端**：FastAPI · Redis · agentscope · python-jose · passlib · httpx
 
 **设计风格**：Apple 设计规范（SF Pro 字体栈，`#0066cc` 强调色，`#f5f5f7` 背景）
+
+---
+
+## 开发约束
+
+贡献代码前请阅读以下约束：
+
+- **不修改 agentscope 源码**：只调用 agentscope 开放 API（`agentscope.app` / `agentscope.mcp` / `agentscope.permission`）
+- **开闭原则**：新功能 = 新 router 文件，在 `main.py` 注册；共享工具追加到 `webui_helpers.py`
+- **Redis 规范**：key 字符串通过 `webui_helpers.py` 的 `_xxx_key()` 生成；连续操作用 `pipeline()`；禁用 `KEYS *`
+- **错误日志**：所有错误需包含操作者、资源 id、HTTP status；禁止 `except Exception: pass`
+- **生产安全**：设置 `PRODUCTION_MODE=true` 可限制 agent Bash tool 为只读模式并屏蔽 stdio MCP；详见 CLAUDE.md 编码规范章节
+
+详细约束见 [CLAUDE.md](CLAUDE.md)。

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { redirectToLogin, WEBUI_TENANT } from '@/api/client'
 
 export interface AgentEvent {
   type: string
@@ -21,7 +22,6 @@ export interface StreamState {
 }
 
 const DONE_TYPES = new Set(['REPLY_END', 'EXCEED_MAX_ITERS'])
-const WEBUI_TENANT = 'webui'
 
 /**
  * Derive the backend's origin from the current page URL.
@@ -82,7 +82,16 @@ export function useSSEStream() {
         })
 
         if (!resp.ok || !resp.body) {
-          console.warn('[SSE] stream failed:', resp.status, directUrl)
+          if (resp.status === 401) {
+            // Token expired or missing — SSE bypasses axios interceptor, so
+            // we handle the redirect here instead of showing nothing to the user.
+            setState(s => ({ ...s, streaming: false, done: true }))
+            redirectToLogin()
+            return
+          }
+          // Read the response body to get the actual error detail from the backend.
+          const body = await resp.text().catch(() => '(unreadable)')
+          console.warn('[SSE] stream failed:', resp.status, directUrl, body)
           setState(s => ({ ...s, streaming: false, done: true }))
           return
         }

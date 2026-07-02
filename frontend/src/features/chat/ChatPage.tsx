@@ -13,7 +13,7 @@ import SkillPickerModal from './SkillPickerModal'
 import MessageContent from './renderers/MessageContent'
 import { fileToBlock, FILE_ACCEPT, type ContentBlock } from './attachments/fileToBlocks'
 import { useSSEStream } from './useSSEStream'
-import { Send, AlertTriangle, Bot, Plus, Loader2, Paperclip, Wand2, X } from 'lucide-react'
+import { Send, Square, AlertTriangle, Bot, Plus, Loader2, Paperclip, Wand2, X } from 'lucide-react'
 
 function uid() { return crypto.randomUUID() }
 function buildUserMsg(text: string, blocks: ContentBlock[] = []) {
@@ -47,7 +47,7 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const { state: sseState, start, reset } = useSSEStream()
+  const { state: sseState, start, stop, reset } = useSSEStream()
   const { t } = useTranslation()
 
   const { data: allAgents = [] } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list })
@@ -96,12 +96,16 @@ export default function ChatPage() {
     try {
       const cfg = await webuiApi.getAgentModel(aid)
       if ((cfg as any)?.credential_id) found = cfg as ChatModelConfig
-    } catch {}
+    } catch (err) {
+      console.warn('[loadModel] getAgentModel failed:', err)
+    }
     if (!found) {
       try {
         const def = await webuiApi.getDefaultModel()
         if ((def as any)?.credential_id) found = def as ChatModelConfig
-      } catch {}
+      } catch (err) {
+        console.warn('[loadModel] getDefaultModel failed:', err)
+      }
     }
     setModelConfig(found)
     setNoModelWarning(!found)
@@ -153,7 +157,7 @@ export default function ChatPage() {
           }))
           .filter((m: DisplayMsg) => m.content)
         setMessages(msgs)
-      }).catch(() => {})
+      }).catch(err => console.warn('[resume] load history failed:', err))
     } catch {}
   }, [])
 
@@ -205,7 +209,7 @@ export default function ChatPage() {
       setMcpInjectErrors([])
       webuiApi.applyAgentWorkspace(agentId, sessionId)
         .then(res => { if (res?.mcp_errors?.length) setMcpInjectErrors(res.mcp_errors) })
-        .catch(() => {})
+        .catch(err => console.error('[workspace] apply failed:', err))
       setWorkspaceApplied(true)
     }
   }, [sessionId, agentId, workspaceApplied])
@@ -530,11 +534,19 @@ export default function ChatPage() {
             className="flex-1 resize-none rounded-[var(--as-r-md)] px-3 py-2 text-sm outline-none transition-colors"
             style={{ border: '1px solid var(--as-hairline)', minHeight: 38, maxHeight: 128,
               background: (isDisabled && !input) ? 'var(--as-parchment)' : '#fff' }} />
-          <button onClick={send} disabled={!input.trim() || isDisabled}
-            className="flex items-center gap-1.5 px-4 py-2 text-white text-sm rounded-[var(--as-pill)] transition-colors disabled:opacity-40"
-            style={{ background: 'var(--as-primary)' }}>
-            <Send size={13} />{t('chat.button.send')}
-          </button>
+          {sseState.streaming ? (
+            <button onClick={stop}
+              className="flex items-center gap-1.5 px-4 py-2 text-white text-sm rounded-[var(--as-pill)] transition-colors"
+              style={{ background: '#dc2626' }}>
+              <Square size={13} fill="currentColor" />{t('chat.button.stop')}
+            </button>
+          ) : (
+            <button onClick={send} disabled={!input.trim() || isDisabled}
+              className="flex items-center gap-1.5 px-4 py-2 text-white text-sm rounded-[var(--as-pill)] transition-colors disabled:opacity-40"
+              style={{ background: 'var(--as-primary)' }}>
+              <Send size={13} />{t('chat.button.send')}
+            </button>
+          )}
       </div>
 
       {pickerOpen && (

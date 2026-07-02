@@ -6,10 +6,13 @@ Starts the same AgentScope API as ../agentscope-app/main.py and adds:
   - /users/*  Admin-only user CRUD with agent binding
   - /logs/*   Log file viewer
 """
+import base64
+import json as _json
 import logging
 import os
 import pathlib
 import sys
+import time
 from logging.handlers import TimedRotatingFileHandler
 from dotenv import load_dotenv
 
@@ -36,8 +39,16 @@ _fh = TimedRotatingFileHandler(
 )
 _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(), _fh])
+# Disable propagation to root before adding the file handler explicitly — without
+# this, each uvicorn record would propagate to root (which already holds _fh) and
+# then be written a second time by the explicit addHandler below.
 for _n in ("uvicorn", "uvicorn.access", "uvicorn.error"):
-    logging.getLogger(_n).addHandler(_fh)
+    lg = logging.getLogger(_n)
+    lg.propagate = False
+    lg.addHandler(_fh)
+    lg.addHandler(logging.StreamHandler())
+
+_req_logger = logging.getLogger("request")
 
 # ── AgentScope app ────────────────────────────────────────────────────────────
 import uvicorn
@@ -50,24 +61,7 @@ from agentscope.app.deps import get_current_user_id
 from agentscope.app.message_bus import RedisMessageBus
 from agentscope.app.storage import RedisStorage
 from agentscope.app.workspace_manager import LocalWorkspaceManager
-from agentscope.mcp import MCPClient, HttpMCPConfig
 from agentscope.permission import PermissionContext, PermissionMode
-
-# No default MCPs — stateful MCPs (like browser-use via npx) take 60-70s to
-# initialize on each new session because npx must download the package.
-# Users can add MCPs via the MCP library page and they'll be injected per session.
-default_mcps: list[MCPClient] = []
-
-if os.getenv("AMAP_API_KEY"):
-    default_mcps.append(
-        MCPClient(
-            name="amap",
-            mcp_config=HttpMCPConfig(
-                url=f"https://mcp.amap.com/mcp?key={os.environ['AMAP_API_KEY']}",
-            ),
-            is_stateful=False,
-        )
-    )
 
 app = create_app(
     storage=RedisStorage(
@@ -80,7 +74,7 @@ app = create_app(
     ),
     workspace_manager=LocalWorkspaceManager(
         basedir=str(_ROOT / "workspaces"),
-        default_mcps=default_mcps,
+        default_mcps=[],
     ),
     custom_subagent_templates=[
         SubAgentTemplate(
@@ -117,22 +111,71 @@ app = create_app(
 # namespace so the existing resource model (shared namespace + webui RBAC on
 # /webui/*) is preserved. See auth_router.webui_user_id.
 
+# ── Request logging middleware ────────────────────────────────────────────────
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class RequestLogMiddleware(BaseHTTPMiddleware):
+    """Log every request: method, path, status, duration, and short user ID.
+
+    User ID is decoded from the JWT without verification (just to annotate the
+    log line) — actual auth is enforced by the dependency overrides below.
+    """
+    async def dispatch(self, request, call_next):
+        t0 = time.monotonic()
+        user = "anonymous"
+        try:
+            auth = request.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                parts = auth[7:].split(".")
+                if len(parts) >= 2:
+                    # Decode only the payload — no signature verification needed
+                    # for a log annotation; avoid HMAC work on every request.
+                    padded = parts[1] + "=" * (-len(parts[1]) % 4)
+                    p = _json.loads(base64.b64decode(
+                        padded.replace("-", "+").replace("_", "/")
+                    ))
+                    user = p.get("sub", "anonymous")[:8]
+        except Exception:
+            pass
+        response = await call_next(request)
+        ms = (time.monotonic() - t0) * 1000
+        _req_logger.info(
+            "%s %s %d %.0fms user=%s",
+            request.method, request.url.path, response.status_code, ms, user,
+        )
+        return response
+
+
+app.add_middleware(RequestLogMiddleware)
+
 # ── Auth & Users routers ──────────────────────────────────────────────────────
 import auth_router
 import users_router
-import webui_router
+import mcp_router
+import skill_router
+import schedule_router
+import agent_config_router
+import session_router
+import model_router
 import redis_browser_router
+import webui_helpers
 
 app.dependency_overrides[get_current_user_id] = auth_router.webui_user_id
 
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
-app.include_router(webui_router.router)
+app.include_router(mcp_router.router)
+app.include_router(skill_router.router)
+app.include_router(schedule_router.router)
+app.include_router(agent_config_router.router)
+app.include_router(session_router.router)
+app.include_router(model_router.router)
 app.include_router(redis_browser_router.router)
 
 # Migrate per-admin MCP/skill config into the shared `admin` namespace so all
 # admins see one library. Idempotent — no-op on boots after the first.
-webui_router.migrate_admin_shared_namespace()
+webui_helpers.migrate_admin_shared_namespace()
 
 # ── Log viewer endpoint ───────────────────────────────────────────────────────
 # Admin-only: backend logs may contain JWT tokens, user IDs, and error stack
