@@ -209,6 +209,8 @@ GET/PUT /webui/agent-mcps/{agent_id}          # Agent 绑定的 MCP 名列表（
 GET/PUT /webui/agent-skills/{agent_id}        # Agent 绑定的 skill 路径列表（string[]）
 GET  /webui/agent-skills-full/{agent_id}      # 解析成 {name,path,is_enabled}（非 admin 也能用）
 GET/PUT /webui/agent-questions/{agent_id}     # Agent 预设问题（string[]，最多 5，服务端 trim+cap）
+GET  /webui/agent-security/{agent_id}        # Agent 安全等级（{level: strict|workspace|standard|open}，默认 workspace）
+PUT  /webui/agent-security/{agent_id}        # 设置安全等级（admin only；maps 到 agentscope PermissionMode）
 
 # MCP 库（按 owner：admin 共享 "admin" / 非 admin 按 user.id）
 GET  /webui/mcp-lib                  # 列表（auth_token 被剥离）

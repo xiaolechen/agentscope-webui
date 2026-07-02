@@ -114,7 +114,15 @@
       "credential": "Credential",
       "model": "Model",
       "noModel": "No model",
-      "selectModel": "Select model…"
+      "selectModel": "Select model…",
+      "securityLevel": "Security Level",
+      "securityLevelAdminOnly": "Security level can only be changed by admin",
+      "securityLevels": {
+        "strict":    { "name": "Read-only",      "desc": "Only read-only commands (ls/cat/git status); blocks ip/curl/writes/scripts", "chips": ["No ip/curl", "No file writes", "No script exec"] },
+        "workspace": { "name": "Workspace",      "desc": "Read/write within workspace dir; path traversal denied",                    "chips": ["Workspace read/write", "No path traversal"] },
+        "standard":  { "name": "Standard",       "desc": "Dangerous ops require confirmation; most commands allowed",                  "chips": ["Confirm dangerous ops", "Most commands ok"] },
+        "open":      { "name": "Unrestricted",   "desc": "No restrictions; trusted/dev environments only",                            "chips": ["⚠ Trusted env only"] }
+      }
     },
     "dualList": {
       "available": "Available",

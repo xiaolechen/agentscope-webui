@@ -114,7 +114,15 @@
       "credential": "凭证",
       "model": "模型",
       "noModel": "无模型",
-      "selectModel": "选择模型…"
+      "selectModel": "选择模型…",
+      "securityLevel": "安全等级",
+      "securityLevelAdminOnly": "安全等级仅 admin 可修改",
+      "securityLevels": {
+        "strict":    { "name": "严格只读",   "desc": "仅允许只读命令（ls/cat/git status）；禁止 ip/curl/写文件/脚本执行",   "chips": ["禁止 ip/curl", "禁止写文件", "禁止脚本执行"] },
+        "workspace": { "name": "工作目录",   "desc": "工作目录内读写；工作目录外路径操作被拒绝",                             "chips": ["工作目录内读写", "禁止路径遍历"] },
+        "standard":  { "name": "标准",       "desc": "危险操作 ASK（无人值守时拒绝）；大多数命令可用",                       "chips": ["危险操作需确认", "大多数命令可用"] },
+        "open":      { "name": "无限制",     "desc": "无约束；仅限受信任/开发环境",                                          "chips": ["⚠ 仅限受信任环境"] }
+      }
     },
     "dualList": {
       "available": "可选",

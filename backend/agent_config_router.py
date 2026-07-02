@@ -1,12 +1,14 @@
-"""Per-agent configuration — model, MCP bindings, skill bindings, preset questions."""
+"""Per-agent configuration — model, MCP bindings, skill bindings, preset questions, security level."""
 import logging, pathlib
+from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 from auth_router import UserInDB, current_user, _r
 from webui_helpers import (
     ChatModelConfig,
     _config_owner, _get_json, _set_json, _get_list, _set_list,
-    _skill_disabled_key,
+    _skill_disabled_key, _agent_security_key,
 )
 
 router = APIRouter(prefix="/webui", tags=["webui"])
@@ -104,6 +106,29 @@ async def set_agent_questions(
     cleaned = [q.strip() for q in body if isinstance(q, str) and q.strip()][:5]
     _set_list(f"webui:config:agent-questions:{agent_id}", cleaned)
     return cleaned
+
+
+# ── Per-agent security level ──────────────────────────────────────────────────
+
+class AgentSecurityConfig(BaseModel):
+    level: Literal["strict", "workspace", "standard", "open"] = "workspace"
+
+
+@router.get("/agent-security/{agent_id}")
+async def get_agent_security(agent_id: str, _: UserInDB = Depends(require_agent_access)):
+    return _get_json(_agent_security_key(agent_id)) or {"level": "workspace"}
+
+
+@router.put("/agent-security/{agent_id}")
+async def set_agent_security(
+    agent_id: str,
+    body: AgentSecurityConfig,
+    user: UserInDB = Depends(require_agent_access),
+):
+    if user.role != "admin":
+        raise HTTPException(403, "Security level can only be set by admin")
+    _set_json(_agent_security_key(agent_id), body.model_dump())
+    return body
 
 
 # ── Agent skills — full resolution ────────────────────────────────────────────

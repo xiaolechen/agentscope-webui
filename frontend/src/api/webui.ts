@@ -29,6 +29,12 @@ export interface SkillDef {
   is_enabled: boolean
 }
 
+export type SecurityLevel = 'strict' | 'workspace' | 'standard' | 'open'
+
+export interface AgentSecurityConfig {
+  level: SecurityLevel
+}
+
 export interface McpTestResult {
   ok: boolean
   tool_count?: number
@@ -72,6 +78,12 @@ export const webuiApi = {
     apiClient.get(`/webui/agent-questions/${agentId}`).then(r => r.data),
   setAgentQuestions: (agentId: string, questions: string[]) =>
     apiClient.put(`/webui/agent-questions/${agentId}`, questions).then(r => r.data),
+
+  // Per-agent security level (admin write, any authorized user read)
+  getAgentSecurity: (agentId: string): Promise<AgentSecurityConfig> =>
+    apiClient.get(`/webui/agent-security/${agentId}`).then(r => r.data),
+  setAgentSecurity: (agentId: string, config: AgentSecurityConfig) =>
+    apiClient.put(`/webui/agent-security/${agentId}`, config).then(r => r.data),
 
   // Inject a single skill into an active session (chat skill-picker, non-bound skill)
   injectSessionSkill: (agentId: string, sessionId: string, skillPath: string) =>

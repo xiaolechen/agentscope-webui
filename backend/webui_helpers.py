@@ -5,7 +5,7 @@ forwarding helper, the shared ChatModelConfig model, and the startup migration
 so that all router files can import them without circular dependencies.
 """
 import json, logging, os
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import Request
 from pydantic import BaseModel
@@ -22,6 +22,33 @@ PRODUCTION_MODE: bool = os.getenv("PRODUCTION_MODE", "false").lower() in ("true"
 # PermissionMode applied in production. "explore" = read-only (blocks ip a/curl/etc.);
 # "accept_edits" = allows file writes within workspace but not path traversal.
 PRODUCTION_PERMISSION_MODE: str = os.getenv("PRODUCTION_PERMISSION_MODE", "explore")
+
+# Per-agent security levels. Each maps to an agentscope PermissionMode.
+# Default when unset: "workspace" (accept_edits — workspace-only read/write).
+# PRODUCTION_MODE floors any agent that tries to go above "workspace".
+SecurityLevel = Literal["strict", "workspace", "standard", "open"]
+LEVEL_TO_PERMISSION_MODE: dict[str, str] = {
+    "strict":    "explore",       # read-only bash; blocks ip a / curl / rm
+    "workspace": "accept_edits",  # workspace-dir read/write; path traversal denied
+    "standard":  "default",       # dangerous ops require confirmation
+    "open":      "bypass",        # no restrictions; trusted/dev only
+}
+_DEFAULT_SECURITY_LEVEL: SecurityLevel = "workspace"
+
+
+def effective_permission_mode(agent_id: str) -> str:
+    """Return the agentscope permission_mode string for an agent's session.
+
+    Applies PRODUCTION_MODE floor: if enabled, 'standard' and 'open' are
+    clamped to 'workspace' so production agents can never exceed that ceiling.
+    """
+    raw = _get_json(_agent_security_key(agent_id)) or {}
+    level: str = raw.get("level", _DEFAULT_SECURITY_LEVEL)
+    if level not in LEVEL_TO_PERMISSION_MODE:
+        level = _DEFAULT_SECURITY_LEVEL
+    if PRODUCTION_MODE and level in ("open", "standard"):
+        level = "workspace"
+    return LEVEL_TO_PERMISSION_MODE[level]
 
 
 # ── Shared Pydantic model ─────────────────────────────────────────────────────
@@ -90,6 +117,10 @@ def _skill_disabled_key(owner: str) -> str:
 
 def _session_key(user_id: str) -> str:
     return f"webui:user-sessions:{user_id}"
+
+
+def _agent_security_key(agent_id: str) -> str:
+    return f"webui:config:agent-security:{agent_id}"
 
 
 # ── JWT forwarding ────────────────────────────────────────────────────────────

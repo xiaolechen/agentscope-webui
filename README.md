@@ -181,6 +181,7 @@ agentscope-webui/
 | `webui:config:agent-mcps:{agent_id}` | Agent 绑定的 MCP 名列表 |
 | `webui:config:agent-skills:{agent_id}` | Agent 绑定的 skill 路径列表 |
 | `webui:config:agent-questions:{agent_id}` | Agent 预设问题（最多 5） |
+| `webui:config:agent-security:{agent_id}` | Agent 安全等级（strict/workspace/standard/open，默认 workspace） |
 | `webui:config:cred-models:{cred_id}` | Credential 的自定义模型名列表 |
 | `webui:config:mcp-lib:{owner}` | MCP Server 库（admin 共享 / 非 admin 隔离） |
 | `webui:config:skill-dirs:{owner}` | Skill 根目录列表（admin 共享 / 非 admin 隔离） |

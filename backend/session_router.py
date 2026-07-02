@@ -10,7 +10,8 @@ from webui_helpers import (
     _config_owner, _get_list,
     _mcp_key, _session_key,
     _forward_auth_headers,
-    PRODUCTION_MODE, PRODUCTION_PERMISSION_MODE,
+    PRODUCTION_MODE,
+    effective_permission_mode,
 )
 from mcp_router import McpDef, _mcpdef_to_client
 
@@ -186,23 +187,23 @@ async def apply_session_workspace(
         skill_results = await asyncio.gather(*[_post_skill(p) for p in skill_paths])
         skills_added = sum(1 for r in skill_results if r)
 
-        if PRODUCTION_MODE:
-            pm_resp = await client.patch(
-                f"{AGENTSCOPE_BASE}/sessions/{session_id}",
-                params={"agent_id": agent_id},
-                json={"permission_mode": PRODUCTION_PERMISSION_MODE},
-                headers=headers,
+        mode = effective_permission_mode(agent_id)
+        pm_resp = await client.patch(
+            f"{AGENTSCOPE_BASE}/sessions/{session_id}",
+            params={"agent_id": agent_id},
+            json={"permission_mode": mode},
+            headers=headers,
+        )
+        if pm_resp.is_success:
+            logger.info(
+                "security: permission_mode=%s agent=%s session=%s",
+                mode, agent_id, session_id,
             )
-            if pm_resp.is_success:
-                logger.info(
-                    "production-mode: set permission_mode=%s agent=%s session=%s",
-                    PRODUCTION_PERMISSION_MODE, agent_id, session_id,
-                )
-            else:
-                logger.warning(
-                    "production-mode: failed to set permission_mode=%s agent=%s session=%s status=%d",
-                    PRODUCTION_PERMISSION_MODE, agent_id, session_id, pm_resp.status_code,
-                )
+        else:
+            logger.warning(
+                "security: failed to set permission_mode=%s agent=%s session=%s status=%d",
+                mode, agent_id, session_id, pm_resp.status_code,
+            )
 
     return {
         "ok": not mcp_errors,

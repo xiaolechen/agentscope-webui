@@ -151,6 +151,7 @@ npm run build --prefix frontend  # 生产构建（TypeScript 检查 + Vite）
   /webui/agent-skills/{id}         # Agent 绑定的 skill 路径列表
   /webui/agent-skills-full/{id}    # 同上，但解析成 {name,path,is_enabled}（非 admin 也能用，不依赖调用方 skill-dirs）
   /webui/agent-questions/{id}      # Agent 预设问题（string[]，最多 5）
+  /webui/agent-security/{id}       # Agent 安全等级（GET 任何人；PUT admin only）
   /webui/cred-models/{id}          # Credential 自定义模型名
   /webui/mcp-lib                   # MCP 库（按 owner：admin 共享 / 非 admin 隔离）
   /webui/mcp-lib/{name}            # PUT 编辑（name 不可变）/ PATCH 启停 / DELETE
@@ -210,10 +211,21 @@ npm run build --prefix frontend  # 生产构建（TypeScript 检查 + Vite）
 - 禁止就地修改 Pydantic model 字段（如 `user.role = "admin"`）
 - 必须使用 `model.model_copy(update={...})`
 
-### 生产安全约束
-- `PRODUCTION_MODE=true`：`session_router.py` 在 workspace 注入时过滤 stdio MCP 并把 session PermissionMode 设为 `PRODUCTION_PERMISSION_MODE`（默认 `explore` = 只读）
-- `explore` 模式：agent Bash tool 只允许 `ls`/`cat`/`git status` 等只读命令，`ip a`/`curl`/`ifconfig` 等均被 DENY
-- `accept_edits` 模式：允许在 workspace 目录内读写，但阻止路径遍历（`ip a` 等仍可用）
+### 安全等级约束
+
+**Per-agent 安全等级**（`webui:config:agent-security:{agent_id}`，admin 写/任何授权用户读）：
+
+| 等级 Key | PermissionMode | 限制说明 |
+|---|---|---|
+| `strict` | `explore` | 只读命令；禁止 `ip a`/`curl`/`rm`/写文件/脚本执行 |
+| `workspace` | `accept_edits` | workspace 目录内读写；路径遍历拒绝（默认） |
+| `standard` | `default` | 危险操作 ASK（无人值守时拒绝） |
+| `open` | `bypass` | 无约束；仅受信任/开发环境 |
+
+- 默认等级：`workspace`（agent 未配置时）
+- `PRODUCTION_MODE=true` 时：`open`/`standard` 被 clamp 到 `workspace`；stdio MCP 注入被过滤
+- 逻辑在 `webui_helpers.py:effective_permission_mode(agent_id)` 中集中实现
+- `session_router.py:apply_session_workspace` 每次发消息前调用此函数 PATCH session
 - 网络层隔离（防止 agent curl 外网）需在基础设施层配置（Docker network policy 或 iptables）
 
 ### 多租户扩展点
@@ -261,7 +273,7 @@ backend/mcp_router.py            # MCP 库（注册/编辑/测试/启停，PRODU
 backend/skill_router.py          # Skill 库（扫描/启停/npx 安装）
 backend/session_router.py        # Session 归属 + workspace 注入（MCP+Skill+PermissionMode）
 backend/schedule_router.py       # Schedule 创建代理
-backend/agent_config_router.py   # Agent 级配置（模型/MCP绑定/Skill绑定/预设问题）
+backend/agent_config_router.py   # Agent 级配置（模型/MCP绑定/Skill绑定/预设问题/安全等级）
 backend/model_router.py          # 用户/Agent 模型配置
 backend/redis_browser_router.py  # Redis 数据浏览器（Admin 只读）
 backend/webui_helpers.py         # 共享工具：Redis key helpers、_config_owner()、PRODUCTION_MODE 常量

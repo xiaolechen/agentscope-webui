@@ -4,11 +4,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { agentsApi, AgentRecord } from '@/api/agents'
 import { credentialsApi } from '@/api/credentials'
-import { webuiApi } from '@/api/webui'
+import { webuiApi, SecurityLevel } from '@/api/webui'
+import { useAuthStore } from '@/store/auth'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Pencil, Trash2, MessageSquare, Settings2, ChevronRight, X, Search, Network, Wand2 } from 'lucide-react'
+import { Pencil, Trash2, MessageSquare, Settings2, ChevronRight, X, Search, Network, Wand2, Lock } from 'lucide-react'
 
 const schema = z.object({
   name: z.string().min(1, 'REQUIRED'),
@@ -27,8 +28,19 @@ const PROVIDERS = [
   { labelKey: 'term.provider.ollama',    key: 'ollama',    type: 'ollama_credential',    modelType: 'ollama_chat' },
 ] as const
 
+const SECURITY_LEVELS: SecurityLevel[] = ['strict', 'workspace', 'standard', 'open']
+
+const LEVEL_COLORS: Record<SecurityLevel, string> = {
+  strict:    '#dc2626',  // red
+  workspace: '#ea580c',  // orange
+  standard:  '#ca8a04',  // yellow
+  open:      '#16a34a',  // green
+}
+
 function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()
+  const role = useAuthStore(s => s.role)
+  const isAdmin = role === 'admin'
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Fields>({
     resolver: zodResolver(schema),
     defaultValues: { name: agent?.data.name ?? '', system_prompt: (agent?.data.system_prompt as string) ?? '' },
@@ -37,6 +49,7 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
   const [selectedCredId, setSelectedCredId] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [questions, setQuestions] = useState<string[]>([])
+  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>('workspace')
 
   const { data: credentials = [] } = useQuery({ queryKey: ['credentials'], queryFn: credentialsApi.list })
   const { data: existingModel } = useQuery({
@@ -49,10 +62,19 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
     queryFn: () => webuiApi.getAgentQuestions(agent!.id),
     enabled: !!agent,
   })
+  const { data: existingSecurity } = useQuery({
+    queryKey: ['agent-security', agent?.id],
+    queryFn: () => webuiApi.getAgentSecurity(agent!.id),
+    enabled: !!agent,
+  })
 
   useEffect(() => {
     if (Array.isArray(existingQuestions)) setQuestions(existingQuestions as string[])
   }, [existingQuestions])
+
+  useEffect(() => {
+    if (existingSecurity?.level) setSecurityLevel(existingSecurity.level)
+  }, [existingSecurity])
 
   useEffect(() => {
     if ((existingModel as any)?.credential_id) {
@@ -97,6 +119,9 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
     }
     if (savedId) {
       await webuiApi.setAgentQuestions(savedId, questions)
+    }
+    if (savedId && isAdmin) {
+      await webuiApi.setAgentSecurity(savedId, { level: securityLevel })
     }
     onSaved()
   }
@@ -171,6 +196,49 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
                   </select>
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="border-t pt-3" style={{ borderColor: 'var(--as-hairline)' }}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Lock size={13} style={{ color: 'var(--as-ink-48)' }} />
+              <p className="text-sm font-medium" style={{ color: 'var(--as-ink-80)' }}>{t('agents.form.securityLevel')}</p>
+              {!isAdmin && (
+                <span className="text-xs ml-auto" style={{ color: 'var(--as-ink-48)' }}>{t('agents.form.securityLevelAdminOnly')}</span>
+              )}
+            </div>
+            <div className={`space-y-1.5 ${!isAdmin ? 'opacity-60 pointer-events-none' : ''}`}>
+              {SECURITY_LEVELS.map(level => {
+                const cfg = (t(`agents.form.securityLevels.${level}`, { returnObjects: true }) as { name: string; desc: string; chips: string[] })
+                const isSelected = securityLevel === level
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    disabled={!isAdmin}
+                    onClick={() => setSecurityLevel(level)}
+                    className="w-full text-left px-3 py-2 rounded-[var(--as-r-sm)] transition-colors"
+                    style={{
+                      border: `1px solid ${isSelected ? LEVEL_COLORS[level] : 'var(--as-hairline)'}`,
+                      background: isSelected ? `${LEVEL_COLORS[level]}10` : 'transparent',
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: LEVEL_COLORS[level] }} />
+                      <span className="text-xs font-medium" style={{ color: 'var(--as-ink-80)' }}>{cfg.name}</span>
+                    </div>
+                    <p className="text-xs ml-4" style={{ color: 'var(--as-ink-48)' }}>{cfg.desc}</p>
+                    <div className="flex flex-wrap gap-1 mt-1 ml-4">
+                      {cfg.chips.map(chip => (
+                        <span key={chip} className="text-[10px] px-1.5 py-0.5 rounded"
+                          style={{ background: 'var(--as-hairline)', color: 'var(--as-ink-64)' }}>
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
