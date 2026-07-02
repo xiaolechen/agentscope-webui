@@ -139,9 +139,9 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
 
   return (
     <div className="as-overlay">
-      <div className="as-dialog" style={{ maxWidth: "460px" }}>
-        <h3 className="text-base font-semibold mb-4">{agent ? t('agents.dialog.edit') : t('agents.dialog.new')}</h3>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div className="as-dialog" style={{ maxWidth: "460px", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+        <h3 className="text-base font-semibold mb-4" style={{ flexShrink: 0 }}>{agent ? t('agents.dialog.edit') : t('agents.dialog.new')}</h3>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" style={{ overflowY: "auto", flex: 1, paddingRight: "2px" }}>
           {inp(t('agents.form.name'), 'name')}
           {inp(t('agents.form.systemPrompt'), 'system_prompt', true)}
 
@@ -242,7 +242,7 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2 pt-2 pb-1" style={{ position: 'sticky', bottom: 0, background: 'var(--as-bg-primary)' }}>
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm" style={{ color: 'var(--as-ink-80)' }}>{t('common.button.cancel')}</button>
             <button type="submit" disabled={isSubmitting}
               className="as-btn as-btn-primary">
