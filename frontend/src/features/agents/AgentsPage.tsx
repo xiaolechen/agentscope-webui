@@ -39,6 +39,17 @@ const LEVEL_COLORS: Record<SecurityLevel, string> = {
 
 function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()
+
+  function credLabel(cred: any): string {
+    const credType = String(cred.data?.type ?? '')
+    if (cred.data?.base_url && credType !== 'ollama_credential') {
+      const name = String(cred.data?.name ?? '')
+      return name || t('term.provider.custom')
+    }
+    const provider = PROVIDERS.find(p => p.type === credType)
+    return provider ? t(provider.labelKey) : credType || cred.id
+  }
+
   const role = useAuthStore(s => s.role)
   const isAdmin = role === 'admin'
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Fields>({
@@ -182,7 +193,7 @@ function AgentDialog({ agent, onClose, onSaved }: { agent: AgentRecord | null; o
                   className="as-input">
                   <option value="">{t('agents.form.noModel')}</option>
                   {(credentials as any[]).map((c: any) => (
-                    <option key={c.id} value={c.id}>{String(c.data?.type ?? c.id)}</option>
+                    <option key={c.id} value={c.id}>{credLabel(c)}</option>
                   ))}
                 </select>
               </div>

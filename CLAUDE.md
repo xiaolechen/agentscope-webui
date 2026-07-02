@@ -153,6 +153,7 @@ npm run build --prefix frontend  # 生产构建（TypeScript 检查 + Vite）
   /webui/agent-questions/{id}      # Agent 预设问题（string[]，最多 5）
   /webui/agent-security/{id}       # Agent 安全等级（GET 任何人；PUT admin only）
   /webui/cred-models/{id}          # Credential 自定义模型名
+  /webui/test-model                # POST 模型连通性测试（body: {credential_id, model_name}）
   /webui/mcp-lib                   # MCP 库（按 owner：admin 共享 / 非 admin 隔离）
   /webui/mcp-lib/{name}            # PUT 编辑（name 不可变）/ PATCH 启停 / DELETE
   /webui/mcp-lib/test              # POST 临时测试（带表单里的 token）
@@ -274,7 +275,7 @@ backend/skill_router.py          # Skill 库（扫描/启停/npx 安装）
 backend/session_router.py        # Session 归属 + workspace 注入（MCP+Skill+PermissionMode）
 backend/schedule_router.py       # Schedule 创建代理
 backend/agent_config_router.py   # Agent 级配置（模型/MCP绑定/Skill绑定/预设问题/安全等级）
-backend/model_router.py          # 用户/Agent 模型配置
+backend/model_router.py          # 用户/Agent 模型配置；POST /webui/test-model 模型连通性测试
 backend/redis_browser_router.py  # Redis 数据浏览器（Admin 只读）
 backend/webui_helpers.py         # 共享工具：Redis key helpers、_config_owner()、PRODUCTION_MODE 常量
 

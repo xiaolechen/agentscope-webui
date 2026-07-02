@@ -177,6 +177,19 @@ GET    /model/?provider=dashscope  # 该 provider 的模型列表
 
 支持的 type：`dashscope_credential` / `anthropic_credential` / `openai_credential` / `deepseek_credential` / `gemini_credential` / `xai_credential` / `moonshot_credential` / `ollama_credential`
 
+**自定义（OpenAI 兼容）端点**：设置 `name: "custom"` 以标记为自定义凭据；UI 据此显示协议选择器并跳过自动模型列表拉取：
+```json
+{
+  "data": {
+    "type": "openai_credential",
+    "api_key": "sk-...",
+    "base_url": "https://your-api.example.com/v1",
+    "name": "custom"
+  }
+}
+```
+`type` 可以是 `openai_credential` / `anthropic_credential` / `deepseek_credential`，取决于目标端点的协议格式。
+
 ### ChatModelConfig 结构
 
 session 创建或 PATCH 时使用：
@@ -203,6 +216,7 @@ PUT  /webui/agent-model/{agent_id}    # 设置 Agent 的模型配置
 DELETE /webui/agent-model/{agent_id}  # 清除 Agent 的模型配置
 GET/POST/DELETE /webui/cred-models/{cred_id}     # Credential 的自定义模型名列表
 GET/POST/DELETE /webui/cred-models/{cred_id}/{model_name}  # 删除单个
+POST /webui/test-model               # 模型连通性测试（body: {credential_id, model_name}；返回 {ok, latency_ms?, error?}）
 
 # Agent 绑定（按 agent_id 共享，require_agent_access 把关：admin 直通 / 非 admin 须绑定）
 GET/PUT /webui/agent-mcps/{agent_id}          # Agent 绑定的 MCP 名列表（string[]）

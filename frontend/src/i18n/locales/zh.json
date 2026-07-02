@@ -1,5 +1,7 @@
 {
-  "brand": { "name": "AgentScope" },
+  "brand": {
+    "name": "AgentScope"
+  },
   "nav": {
     "chat": "对话",
     "sessions": "会话",
@@ -18,8 +20,13 @@
     "username": "用户名",
     "usernamePlaceholder": "admin",
     "password": "密码",
-    "button": { "signIn": "登录", "signingIn": "登录中…" },
-    "error": { "invalidCredentials": "用户名或密码错误" }
+    "button": {
+      "signIn": "登录",
+      "signingIn": "登录中…"
+    },
+    "error": {
+      "invalidCredentials": "用户名或密码错误"
+    }
   },
   "common": {
     "button": {
@@ -32,16 +39,28 @@
       "run": "运行",
       "dismiss": "忽略"
     },
-    "status": { "loading": "加载中…", "saving": "保存中…" },
+    "status": {
+      "loading": "加载中…",
+      "saving": "保存中…"
+    },
     "pagination": {
       "prev": "← 上一页",
       "next": "下一页 →",
       "total": "共 {{count}} 条"
     },
-    "validation": { "required": "必填" },
-    "confirm": { "deletePrompt": "确定删除 {{name}} 吗？" },
-    "error": { "unknown": "未知错误", "requestFailed": "请求失败" },
-    "empty": { "noDataHint": "暂无数据" }
+    "validation": {
+      "required": "必填"
+    },
+    "confirm": {
+      "deletePrompt": "确定删除 {{name}} 吗？"
+    },
+    "error": {
+      "unknown": "未知错误",
+      "requestFailed": "请求失败"
+    },
+    "empty": {
+      "noDataHint": "暂无数据"
+    }
   },
   "chat": {
     "picker": {
@@ -76,14 +95,23 @@
       "sendMessage": "发送一条消息开始对话",
       "presetHint": "选择一个预设问题开始对话"
     },
-    "status": { "loadingModelConfig": "正在加载模型配置…" },
-    "button": { "createAgent": "创建 Agent", "agent": "Agent", "send": "发送", "stop": "终止" },
+    "status": {
+      "loadingModelConfig": "正在加载模型配置…"
+    },
+    "button": {
+      "createAgent": "创建 Agent",
+      "agent": "Agent",
+      "send": "发送",
+      "stop": "终止"
+    },
     "warning": {
       "noModel": "尚未配置模型。前往 ",
       "goToAgentsEdit": "Agents → 编辑",
       "noModelTail": " 选择模型。"
     },
-    "error": { "mcpFailedToLoad": "MCP 加载失败：" },
+    "error": {
+      "mcpFailedToLoad": "MCP 加载失败："
+    },
     "placeholder": {
       "loadingModel": "正在加载模型…",
       "selectAgent": "请先选择 Agent",
@@ -94,15 +122,29 @@
   },
   "sessions": {
     "title": "会话",
-    "filter": { "allAgents": "全部 Agent" },
-    "empty": { "noSessions": "尚无会话。在对话页开始一段对话。" },
-    "button": { "resume": "恢复", "resumeTitle": "继续此对话" },
-    "confirm": { "delete": "确定删除此会话吗？" },
-    "dialog": { "rename": "重命名会话" }
+    "filter": {
+      "allAgents": "全部 Agent"
+    },
+    "empty": {
+      "noSessions": "尚无会话。在对话页开始一段对话。"
+    },
+    "button": {
+      "resume": "恢复",
+      "resumeTitle": "继续此对话"
+    },
+    "confirm": {
+      "delete": "确定删除此会话吗？"
+    },
+    "dialog": {
+      "rename": "重命名会话"
+    }
   },
   "agents": {
     "title": "Agent",
-    "dialog": { "new": "新建 Agent", "edit": "编辑 Agent" },
+    "dialog": {
+      "new": "新建 Agent",
+      "edit": "编辑 Agent"
+    },
     "form": {
       "name": "名称",
       "systemPrompt": "系统提示词",
@@ -118,10 +160,38 @@
       "securityLevel": "安全等级",
       "securityLevelAdminOnly": "安全等级仅 admin 可修改",
       "securityLevels": {
-        "strict":    { "name": "严格只读",   "desc": "仅允许只读命令（ls/cat/git status）；禁止 ip/curl/写文件/脚本执行",   "chips": ["禁止 ip/curl", "禁止写文件", "禁止脚本执行"] },
-        "workspace": { "name": "工作目录",   "desc": "工作目录内读写；工作目录外路径操作被拒绝",                             "chips": ["工作目录内读写", "禁止路径遍历"] },
-        "standard":  { "name": "标准",       "desc": "危险操作 ASK（无人值守时拒绝）；大多数命令可用",                       "chips": ["危险操作需确认", "大多数命令可用"] },
-        "open":      { "name": "无限制",     "desc": "无约束；仅限受信任/开发环境",                                          "chips": ["⚠ 仅限受信任环境"] }
+        "strict": {
+          "name": "严格只读",
+          "desc": "仅允许只读命令（ls/cat/git status）；禁止 ip/curl/写文件/脚本执行",
+          "chips": [
+            "禁止 ip/curl",
+            "禁止写文件",
+            "禁止脚本执行"
+          ]
+        },
+        "workspace": {
+          "name": "工作目录",
+          "desc": "工作目录内读写；工作目录外路径操作被拒绝",
+          "chips": [
+            "工作目录内读写",
+            "禁止路径遍历"
+          ]
+        },
+        "standard": {
+          "name": "标准",
+          "desc": "危险操作 ASK（无人值守时拒绝）；大多数命令可用",
+          "chips": [
+            "危险操作需确认",
+            "大多数命令可用"
+          ]
+        },
+        "open": {
+          "name": "无限制",
+          "desc": "无约束；仅限受信任/开发环境",
+          "chips": [
+            "⚠ 仅限受信任环境"
+          ]
+        }
       }
     },
     "dualList": {
@@ -145,20 +215,36 @@
       "startChatTitle": "与该 Agent 开始对话",
       "configTitle": "配置 Skills 与 MCP"
     },
-    "confirm": { "delete": "确定删除 {{name}} 吗？" },
-    "empty": { "noAgents": "尚无 Agent。创建一个以开始。" }
+    "confirm": {
+      "delete": "确定删除 {{name}} 吗？"
+    },
+    "empty": {
+      "noAgents": "尚无 Agent。创建一个以开始。"
+    }
   },
   "skills": {
     "title": "Skill",
-    "hint": { "pathManagement": "路径管理 → 设置" },
-    "button": { "add": "+ 添加 Skill" },
-    "search": { "placeholder": "搜索 skill…", "count": "{{count}} 个" },
-    "badge": { "enabled": "已启用", "disabled": "已禁用" },
+    "hint": {
+      "pathManagement": "路径管理 → 设置"
+    },
+    "button": {
+      "add": "+ 添加 Skill"
+    },
+    "search": {
+      "placeholder": "搜索 skill…",
+      "count": "{{count}} 个"
+    },
+    "badge": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
     "empty": {
       "noSkills": "尚无 Skill，请到 Settings → Skill Paths 添加路径。",
       "noMatch": "无匹配结果。"
     },
-    "dialog": { "install": "添加 Skill" },
+    "dialog": {
+      "install": "添加 Skill"
+    },
     "install": {
       "targetDir": "安装目录",
       "placeholder": "npx skills add https://github.com/vercel-labs/skills --skill find-skills",
@@ -171,10 +257,23 @@
   },
   "mcp": {
     "title": "MCP Servers",
-    "button": { "register": "+ 注册", "testing": "测试中…", "test": "测试", "edit": "编辑" },
-    "badge": { "enabled": "已启用", "disabled": "已禁用" },
-    "empty": { "noServers": "尚未注册 MCP Server。" },
-    "dialog": { "register": "注册 MCP Server", "edit": "编辑 MCP Server" },
+    "button": {
+      "register": "+ 注册",
+      "testing": "测试中…",
+      "test": "测试",
+      "edit": "编辑"
+    },
+    "badge": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "empty": {
+      "noServers": "尚未注册 MCP Server。"
+    },
+    "dialog": {
+      "register": "注册 MCP Server",
+      "edit": "编辑 MCP Server"
+    },
     "form": {
       "namePlaceholder": "名称（唯一）",
       "transport": "传输方式",
@@ -206,38 +305,71 @@
       "loadingTools": "正在加载工具{{suffix}}…",
       "failedToLoad": "加载失败：{{message}}",
       "noTools": "未暴露任何工具。",
-        "stdioNote": "（stdio 最长 30 秒）"
+      "stdioNote": "（stdio 最长 30 秒）"
     }
   },
   "credentials": {
     "title": "Credential",
-    "button": { "add": "+ 添加" },
-    "confirm": { "delete": "确定删除此凭证吗？" },
-    "empty": { "noCredentials": "尚无凭证。添加一个 API Key 以开始。" },
-    "dialog": { "add": "添加凭证" },
+    "button": {
+      "add": "+ 添加"
+    },
+    "confirm": {
+      "delete": "确定删除此凭证吗？"
+    },
+    "empty": {
+      "noCredentials": "尚无凭证。添加一个 API Key 以开始。"
+    },
+    "dialog": {
+      "add": "添加凭证",
+      "edit": "编辑凭证"
+    },
     "form": {
       "provider": "Provider",
+      "protocol": "协议",
+      "name": "名称",
+      "namePlaceholder": "例如：我的本地模型",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "sk-…",
       "baseUrl": "Base URL",
-      "baseUrlPlaceholder": "http://localhost:11434"
+      "baseUrlPlaceholder": "http://localhost:11434",
+      "baseUrlPlaceholderCustom": "https://your-api.example.com/v1",
+      "apiKeyEditPlaceholder": "留空则保留原值"
     },
     "card": {
       "models": "模型",
       "customSuffix": "（自定义）",
-      "badge": { "default": "默认" },
+      "badge": {
+        "default": "默认"
+      },
       "setDefault": "设为默认",
       "emptyModels": "未找到模型。在下方添加自定义模型。",
-      "customModelPlaceholder": "自定义模型名称…"
+      "customModelPlaceholder": "自定义模型名称…",
+      "test": "测试",
+      "testing": "测试中…",
+      "testFail": "失败"
     }
   },
   "schedules": {
     "title": "Schedule",
-    "button": { "new": "+ 新建", "run": "运行", "runNowTitle": "立即运行" },
-    "badge": { "enabled": "已启用", "disabled": "已禁用" },
-    "confirm": { "delete": "确定删除此定时任务吗？" },
-    "empty": { "noSchedules": "尚未配置定时任务。" },
-    "dialog": { "new": "新建 Schedule", "modelHint": "模型配置自动从 Agent 中读取。" },
+    "button": {
+      "new": "+ 新建",
+      "run": "运行",
+      "runNowTitle": "立即运行"
+    },
+    "badge": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "confirm": {
+      "delete": "确定删除此定时任务吗？"
+    },
+    "empty": {
+      "noSchedules": "尚未配置定时任务。"
+    },
+    "dialog": {
+      "new": "新建 Schedule",
+      "modelHint": "模型配置自动从 Agent 中读取。"
+    },
     "form": {
       "agent": "Agent",
       "selectAgent": "选择 Agent…",
@@ -252,19 +384,28 @@
   },
   "logs": {
     "title": "日志",
-    "error": { "failedToLoad": "日志加载失败。" },
-    "empty": { "noMatch": "没有匹配过滤条件的行。" }
+    "error": {
+      "failedToLoad": "日志加载失败。"
+    },
+    "empty": {
+      "noMatch": "没有匹配过滤条件的行。"
+    }
   },
   "settings": {
     "title": "设置",
-    "tab": { "settings": "设置", "redis": "Redis 数据" },
+    "tab": {
+      "settings": "设置",
+      "redis": "Redis 数据"
+    },
     "section": {
       "account": "账户",
       "appearance": "外观",
       "skillPaths": "Skill 路径",
       "backend": "后端"
     },
-    "account": { "signedInAs": "已登录：" },
+    "account": {
+      "signedInAs": "已登录："
+    },
     "skillPaths": {
       "help": "配置 skill 根目录。每个子目录下含 SKILL.md 文件即为一个 skill。更改后需重启后端生效。",
       "empty": "尚未配置 skill 目录。",
@@ -282,11 +423,22 @@
   },
   "users": {
     "title": "用户",
-    "button": { "new": "+ 新建用户" },
-    "card": { "agents": "Agent：" },
-    "confirm": { "delete": "确定删除 {{name}} 吗？" },
-    "empty": { "noUsers": "尚无用户。创建一个以授予访问权限。" },
-    "dialog": { "new": "新建用户", "edit": "编辑 {{name}}" },
+    "button": {
+      "new": "+ 新建用户"
+    },
+    "card": {
+      "agents": "Agent："
+    },
+    "confirm": {
+      "delete": "确定删除 {{name}} 吗？"
+    },
+    "empty": {
+      "noUsers": "尚无用户。创建一个以授予访问权限。"
+    },
+    "dialog": {
+      "new": "新建用户",
+      "edit": "编辑 {{name}}"
+    },
     "form": {
       "usernamePlaceholder": "用户名",
       "passwordPlaceholder": "密码",
@@ -338,10 +490,29 @@
       "gemini": "Gemini",
       "xai": "xAI",
       "moonshot": "Moonshot",
-      "ollama": "Ollama"
+      "ollama": "Ollama",
+      "custom": "自定义"
     },
-    "transport": { "stdio": "stdio", "sse": "SSE", "streamableHttp": "Streamable HTTP" },
-    "logLevel": { "all": "全部", "error": "ERROR", "warn": "WARN", "info": "INFO", "debug": "DEBUG" },
-    "source": { "app": "应用", "service": "服务" }
+    "protocol": {
+      "openaiCompat": "OpenAI 兼容",
+      "anthropicCompat": "Anthropic 兼容",
+      "deepseekCompat": "DeepSeek 兼容"
+    },
+    "transport": {
+      "stdio": "stdio",
+      "sse": "SSE",
+      "streamableHttp": "Streamable HTTP"
+    },
+    "logLevel": {
+      "all": "全部",
+      "error": "ERROR",
+      "warn": "WARN",
+      "info": "INFO",
+      "debug": "DEBUG"
+    },
+    "source": {
+      "app": "应用",
+      "service": "服务"
+    }
   }
 }

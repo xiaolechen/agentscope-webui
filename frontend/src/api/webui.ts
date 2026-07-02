@@ -178,4 +178,8 @@ export const webuiApi = {
     size: number | null
     rows: { field: string; value: string; truncated?: boolean }[]
   }> => apiClient.get('/webui/redis/key', { params: { key, offset, limit } }).then(r => r.data),
+
+  // Model connectivity test
+  testModel: (credentialId: string, modelName: string): Promise<{ ok: boolean; latency_ms?: number; error?: string }> =>
+    apiClient.post('/webui/test-model', { credential_id: credentialId, model_name: modelName }, { timeout: 20_000 }).then(r => r.data),
 }

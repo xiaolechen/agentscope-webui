@@ -1,5 +1,7 @@
 {
-  "brand": { "name": "AgentScope" },
+  "brand": {
+    "name": "AgentScope"
+  },
   "nav": {
     "chat": "Chat",
     "sessions": "Sessions",
@@ -18,8 +20,13 @@
     "username": "Username",
     "usernamePlaceholder": "admin",
     "password": "Password",
-    "button": { "signIn": "Sign in", "signingIn": "Signing in…" },
-    "error": { "invalidCredentials": "Invalid username or password" }
+    "button": {
+      "signIn": "Sign in",
+      "signingIn": "Signing in…"
+    },
+    "error": {
+      "invalidCredentials": "Invalid username or password"
+    }
   },
   "common": {
     "button": {
@@ -32,16 +39,28 @@
       "run": "Run",
       "dismiss": "Dismiss"
     },
-    "status": { "loading": "Loading…", "saving": "Saving…" },
+    "status": {
+      "loading": "Loading…",
+      "saving": "Saving…"
+    },
     "pagination": {
       "prev": "← Previous",
       "next": "Next →",
       "total": "{{count}} total"
     },
-    "validation": { "required": "Required" },
-    "confirm": { "deletePrompt": "Delete {{name}}?" },
-    "error": { "unknown": "Unknown error", "requestFailed": "Request failed" },
-    "empty": { "noDataHint": "No data" }
+    "validation": {
+      "required": "Required"
+    },
+    "confirm": {
+      "deletePrompt": "Delete {{name}}?"
+    },
+    "error": {
+      "unknown": "Unknown error",
+      "requestFailed": "Request failed"
+    },
+    "empty": {
+      "noDataHint": "No data"
+    }
   },
   "chat": {
     "picker": {
@@ -76,14 +95,23 @@
       "sendMessage": "Send a message to start",
       "presetHint": "Pick a preset question to start"
     },
-    "status": { "loadingModelConfig": "Loading model configuration…" },
-    "button": { "createAgent": "Create Agent", "agent": "Agent", "send": "Send", "stop": "Stop" },
+    "status": {
+      "loadingModelConfig": "Loading model configuration…"
+    },
+    "button": {
+      "createAgent": "Create Agent",
+      "agent": "Agent",
+      "send": "Send",
+      "stop": "Stop"
+    },
     "warning": {
       "noModel": "No model configured. Go to ",
       "goToAgentsEdit": "Agents → Edit",
       "noModelTail": " to select a model."
     },
-    "error": { "mcpFailedToLoad": "MCP failed to load: " },
+    "error": {
+      "mcpFailedToLoad": "MCP failed to load: "
+    },
     "placeholder": {
       "loadingModel": "Loading model…",
       "selectAgent": "Select an agent first",
@@ -94,15 +122,29 @@
   },
   "sessions": {
     "title": "Sessions",
-    "filter": { "allAgents": "All agents" },
-    "empty": { "noSessions": "No sessions yet. Start a conversation in Chat." },
-    "button": { "resume": "Resume", "resumeTitle": "Continue this conversation" },
-    "confirm": { "delete": "Delete this session?" },
-    "dialog": { "rename": "Rename Session" }
+    "filter": {
+      "allAgents": "All agents"
+    },
+    "empty": {
+      "noSessions": "No sessions yet. Start a conversation in Chat."
+    },
+    "button": {
+      "resume": "Resume",
+      "resumeTitle": "Continue this conversation"
+    },
+    "confirm": {
+      "delete": "Delete this session?"
+    },
+    "dialog": {
+      "rename": "Rename Session"
+    }
   },
   "agents": {
     "title": "Agents",
-    "dialog": { "new": "New Agent", "edit": "Edit Agent" },
+    "dialog": {
+      "new": "New Agent",
+      "edit": "Edit Agent"
+    },
     "form": {
       "name": "Name",
       "systemPrompt": "System Prompt",
@@ -118,10 +160,38 @@
       "securityLevel": "Security Level",
       "securityLevelAdminOnly": "Security level can only be changed by admin",
       "securityLevels": {
-        "strict":    { "name": "Read-only",      "desc": "Only read-only commands (ls/cat/git status); blocks ip/curl/writes/scripts", "chips": ["No ip/curl", "No file writes", "No script exec"] },
-        "workspace": { "name": "Workspace",      "desc": "Read/write within workspace dir; path traversal denied",                    "chips": ["Workspace read/write", "No path traversal"] },
-        "standard":  { "name": "Standard",       "desc": "Dangerous ops require confirmation; most commands allowed",                  "chips": ["Confirm dangerous ops", "Most commands ok"] },
-        "open":      { "name": "Unrestricted",   "desc": "No restrictions; trusted/dev environments only",                            "chips": ["⚠ Trusted env only"] }
+        "strict": {
+          "name": "Read-only",
+          "desc": "Only read-only commands (ls/cat/git status); blocks ip/curl/writes/scripts",
+          "chips": [
+            "No ip/curl",
+            "No file writes",
+            "No script exec"
+          ]
+        },
+        "workspace": {
+          "name": "Workspace",
+          "desc": "Read/write within workspace dir; path traversal denied",
+          "chips": [
+            "Workspace read/write",
+            "No path traversal"
+          ]
+        },
+        "standard": {
+          "name": "Standard",
+          "desc": "Dangerous ops require confirmation; most commands allowed",
+          "chips": [
+            "Confirm dangerous ops",
+            "Most commands ok"
+          ]
+        },
+        "open": {
+          "name": "Unrestricted",
+          "desc": "No restrictions; trusted/dev environments only",
+          "chips": [
+            "⚠ Trusted env only"
+          ]
+        }
       }
     },
     "dualList": {
@@ -145,20 +215,36 @@
       "startChatTitle": "Start chat with this agent",
       "configTitle": "Configure Skills & MCPs"
     },
-    "confirm": { "delete": "Delete {{name}}?" },
-    "empty": { "noAgents": "No agents yet. Create one to get started." }
+    "confirm": {
+      "delete": "Delete {{name}}?"
+    },
+    "empty": {
+      "noAgents": "No agents yet. Create one to get started."
+    }
   },
   "skills": {
     "title": "Skills",
-    "hint": { "pathManagement": "Path management → Settings" },
-    "button": { "add": "+ Add Skill" },
-    "search": { "placeholder": "Search skill…", "count": "{{count}} item(s)" },
-    "badge": { "enabled": "Enabled", "disabled": "Disabled" },
+    "hint": {
+      "pathManagement": "Path management → Settings"
+    },
+    "button": {
+      "add": "+ Add Skill"
+    },
+    "search": {
+      "placeholder": "Search skill…",
+      "count": "{{count}} item(s)"
+    },
+    "badge": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
     "empty": {
       "noSkills": "No skills yet. Add a path in Settings → Skill Paths.",
       "noMatch": "No matching results."
     },
-    "dialog": { "install": "Add Skill" },
+    "dialog": {
+      "install": "Add Skill"
+    },
     "install": {
       "targetDir": "Install directory",
       "placeholder": "npx skills add https://github.com/vercel-labs/skills --skill find-skills",
@@ -171,10 +257,23 @@
   },
   "mcp": {
     "title": "MCP Servers",
-    "button": { "register": "+ Register", "testing": "Testing…", "test": "Test", "edit": "Edit" },
-    "badge": { "enabled": "Enabled", "disabled": "Disabled" },
-    "empty": { "noServers": "No MCP servers registered." },
-    "dialog": { "register": "Register MCP Server", "edit": "Edit MCP Server" },
+    "button": {
+      "register": "+ Register",
+      "testing": "Testing…",
+      "test": "Test",
+      "edit": "Edit"
+    },
+    "badge": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "empty": {
+      "noServers": "No MCP servers registered."
+    },
+    "dialog": {
+      "register": "Register MCP Server",
+      "edit": "Edit MCP Server"
+    },
     "form": {
       "namePlaceholder": "Name (unique)",
       "transport": "Transport",
@@ -206,38 +305,71 @@
       "loadingTools": "Loading tools{{suffix}}…",
       "failedToLoad": "Failed to load: {{message}}",
       "noTools": "No tools exposed.",
-        "stdioNote": " (stdio may take up to 30s)"
+      "stdioNote": " (stdio may take up to 30s)"
     }
   },
   "credentials": {
     "title": "Credentials",
-    "button": { "add": "+ Add" },
-    "confirm": { "delete": "Delete credential?" },
-    "empty": { "noCredentials": "No credentials. Add an API key to get started." },
-    "dialog": { "add": "Add Credential" },
+    "button": {
+      "add": "+ Add"
+    },
+    "confirm": {
+      "delete": "Delete credential?"
+    },
+    "empty": {
+      "noCredentials": "No credentials. Add an API key to get started."
+    },
+    "dialog": {
+      "add": "Add Credential",
+      "edit": "Edit Credential"
+    },
     "form": {
       "provider": "Provider",
+      "protocol": "Protocol",
+      "name": "Name",
+      "namePlaceholder": "e.g. My Local Model",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "sk-…",
       "baseUrl": "Base URL",
-      "baseUrlPlaceholder": "http://localhost:11434"
+      "baseUrlPlaceholder": "http://localhost:11434",
+      "baseUrlPlaceholderCustom": "https://your-api.example.com/v1",
+      "apiKeyEditPlaceholder": "Leave blank to keep current key"
     },
     "card": {
       "models": "Models",
       "customSuffix": " (custom)",
-      "badge": { "default": "default" },
+      "badge": {
+        "default": "default"
+      },
       "setDefault": "Set default",
       "emptyModels": "No models found. Add a custom model below.",
-      "customModelPlaceholder": "Custom model name…"
+      "customModelPlaceholder": "Custom model name…",
+      "test": "Test",
+      "testing": "Testing…",
+      "testFail": "Failed"
     }
   },
   "schedules": {
     "title": "Schedules",
-    "button": { "new": "+ New", "run": "Run", "runNowTitle": "Run now" },
-    "badge": { "enabled": "Enabled", "disabled": "Disabled" },
-    "confirm": { "delete": "Delete schedule?" },
-    "empty": { "noSchedules": "No schedules configured." },
-    "dialog": { "new": "New Schedule", "modelHint": "Model configuration is read from the agent automatically." },
+    "button": {
+      "new": "+ New",
+      "run": "Run",
+      "runNowTitle": "Run now"
+    },
+    "badge": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "confirm": {
+      "delete": "Delete schedule?"
+    },
+    "empty": {
+      "noSchedules": "No schedules configured."
+    },
+    "dialog": {
+      "new": "New Schedule",
+      "modelHint": "Model configuration is read from the agent automatically."
+    },
     "form": {
       "agent": "Agent",
       "selectAgent": "Select Agent…",
@@ -252,19 +384,28 @@
   },
   "logs": {
     "title": "Logs",
-    "error": { "failedToLoad": "Failed to load logs." },
-    "empty": { "noMatch": "No lines match the filter." }
+    "error": {
+      "failedToLoad": "Failed to load logs."
+    },
+    "empty": {
+      "noMatch": "No lines match the filter."
+    }
   },
   "settings": {
     "title": "Settings",
-    "tab": { "settings": "Settings", "redis": "Redis Data" },
+    "tab": {
+      "settings": "Settings",
+      "redis": "Redis Data"
+    },
     "section": {
       "account": "Account",
       "appearance": "Appearance",
       "skillPaths": "Skill Paths",
       "backend": "Backend"
     },
-    "account": { "signedInAs": "Signed in as " },
+    "account": {
+      "signedInAs": "Signed in as "
+    },
     "skillPaths": {
       "help": "Configure the skill root directory. Each subdirectory containing a SKILL.md file is a skill. Changes require a backend restart to take effect.",
       "empty": "No skill directory configured.",
@@ -282,11 +423,22 @@
   },
   "users": {
     "title": "Users",
-    "button": { "new": "+ New User" },
-    "card": { "agents": "Agents: " },
-    "confirm": { "delete": "Delete {{name}}?" },
-    "empty": { "noUsers": "No users. Create one to grant access." },
-    "dialog": { "new": "New User", "edit": "Edit {{name}}" },
+    "button": {
+      "new": "+ New User"
+    },
+    "card": {
+      "agents": "Agents: "
+    },
+    "confirm": {
+      "delete": "Delete {{name}}?"
+    },
+    "empty": {
+      "noUsers": "No users. Create one to grant access."
+    },
+    "dialog": {
+      "new": "New User",
+      "edit": "Edit {{name}}"
+    },
     "form": {
       "usernamePlaceholder": "Username",
       "passwordPlaceholder": "Password",
@@ -338,10 +490,29 @@
       "gemini": "Gemini",
       "xai": "xAI",
       "moonshot": "Moonshot",
-      "ollama": "Ollama"
+      "ollama": "Ollama",
+      "custom": "Custom"
     },
-    "transport": { "stdio": "stdio", "sse": "SSE", "streamableHttp": "Streamable HTTP" },
-    "logLevel": { "all": "All", "error": "ERROR", "warn": "WARN", "info": "INFO", "debug": "DEBUG" },
-    "source": { "app": "App", "service": "Service" }
+    "protocol": {
+      "openaiCompat": "OpenAI Compatible",
+      "anthropicCompat": "Anthropic Compatible",
+      "deepseekCompat": "DeepSeek Compatible"
+    },
+    "transport": {
+      "stdio": "stdio",
+      "sse": "SSE",
+      "streamableHttp": "Streamable HTTP"
+    },
+    "logLevel": {
+      "all": "All",
+      "error": "ERROR",
+      "warn": "WARN",
+      "info": "INFO",
+      "debug": "DEBUG"
+    },
+    "source": {
+      "app": "App",
+      "service": "Service"
+    }
   }
 }

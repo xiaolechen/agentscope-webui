@@ -11,7 +11,7 @@
 | **Chat** | 与 Agent 对话，流式输出，支持会话恢复；空状态展示预设问题引导 |
 | **Sessions** | 查看历史会话，继续对话，重命名/删除 |
 | **Agents** | 创建、编辑 Agent，绑定模型配置、MCP、Skill、预设问题 |
-| **Credentials** | 管理 API Key（DashScope / Anthropic / OpenAI 等 8 家），查看模型列表，设置默认模型 |
+| **Credentials** | 管理 API Key（DashScope / Anthropic / OpenAI 等 8 家 + 自定义 OpenAI/Anthropic/DeepSeek 兼容端点），查看模型列表，设置默认模型，一键测试模型连通性 |
 | **MCP** | 注册 / 编辑 MCP Server（stdio / SSE / Streamable HTTP），支持认证（none/bearer/api_key/oauth），测试连接，启停 |
 | **Skills** | 管理 Skill 库（按路径注册），支持 `npx skills add` 在线安装（admin only） |
 | **Schedules** | 定时任务（Cron），Agent 自动定期执行，可立即运行 |
