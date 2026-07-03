@@ -20,6 +20,80 @@ function buildUserMsg(text: string, blocks: ContentBlock[] = []) {
   const content = [{ type: 'text', text, id: uid() }, ...blocks]
   return { id: uid(), role: 'user' as const, name: 'user', content }
 }
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+// Recover a session left parked on ASKING tool calls before sending a new
+// plain message. In production (accept_edits) the llm-wiki-agent's file
+// writes to the KB path trigger REQUIRE_USER_CONFIRM; if the SSE stream
+// ever drops that event (e.g. a buffering reverse proxy, or the tab was
+// closed mid-turn), the session stays parked and the next user message
+// makes agentscope raise "waiting for N tool calls... but received no
+// event". This polls the persisted messages to detect a parked tail and
+// auto-confirms it, looping until the agent settles — mirroring the SSE
+// auto-confirm effect but driven by message state so it works even when
+// the live SSE event was missed. Returns true once the session is clean.
+async function resolveParkedConfirms(agentId: string, sessionId: string): Promise<boolean> {
+  const MAX_ROUNDS = 12
+  const POLL_MS = 1000
+
+  // Fetch the session tail + running flag. A session is "parked" when the
+  // last message is an assistant reply carrying tool_call blocks in the
+  // `asking` state (awaiting a USER_CONFIRM_RESULT).
+  const fetchTail = async () => {
+    const data: any = await sessionsApi.messages(sessionId, agentId, 0, 50)
+    const msgs: any[] = data?.messages ?? []
+    const last = msgs[msgs.length - 1]
+    if (!last || last.role !== 'assistant') {
+      return { asking: [] as any[], replyId: null as string | null, isRunning: !!data?.is_running }
+    }
+    const asking = (last.content ?? []).filter(
+      (b: any) => b.type === 'tool_call' && b.state === 'asking',
+    )
+    return { asking, replyId: (last.id ?? null) as string | null, isRunning: !!data?.is_running }
+  }
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const { asking, replyId } = await fetchTail()
+    if (asking.length === 0) return true // not parked, or already settled
+    if (!replyId) return false
+
+    try {
+      await apiClient.post('/chat/', {
+        agent_id: agentId,
+        session_id: sessionId,
+        input: {
+          type: 'USER_CONFIRM_RESULT',
+          reply_id: replyId,
+          confirm_results: asking.map((tc: any) => ({ confirmed: true, tool_call: tc })),
+        },
+      })
+    } catch (err) {
+      console.warn('[parked] auto-confirm post failed:', err)
+      return false
+    }
+
+    // Wait for the resume run to start (is_running flips true once the
+    // dispatcher picks up the confirm), then finish (is_running false).
+    // Also bail early if the tail is already clean (fast run resolved).
+    let started = false
+    for (let i = 0; i < 5; i++) {
+      await sleep(POLL_MS)
+      const t = await fetchTail()
+      if (t.asking.length === 0) { started = true; break }
+      if (t.isRunning) { started = true; break }
+    }
+    if (!started) continue // never observed running; re-check tail next round
+    const deadline = Date.now() + 55_000
+    while (Date.now() < deadline) {
+      await sleep(POLL_MS)
+      const t = await fetchTail()
+      if (t.asking.length === 0 || !t.isRunning) break
+    }
+    // Loop: if the agent parked on another confirm, the next round resolves it.
+  }
+  return false // could not settle within MAX_ROUNDS
+}
 interface DisplayMsg { id: string; role: 'user' | 'assistant'; content: string; attachments?: ContentBlock[] }
 
 export default function ChatPage() {
@@ -396,6 +470,11 @@ export default function ChatPage() {
       } else {
         // Existing session (resume case) — PATCH to ensure it has model config.
         await sessionsApi.update(sid, agentId, { chat_model_config: cfg } as any).catch(() => {})
+        // Recover a session parked on ASKING tool calls before sending. In
+        // production, KB file-writes trigger REQUIRE_USER_CONFIRM; if the
+        // prior SSE auto-confirm missed it (buffering proxy / closed tab),
+        // a plain message now would crash agentscope. Resolve first.
+        await resolveParkedConfirms(agentId, sid).catch(() => {})
       }
 
       // Inject only the user-attached (non-bound) skills for this turn. Bound

@@ -29,7 +29,15 @@ PRODUCTION_PERMISSION_MODE: str = os.getenv("PRODUCTION_PERMISSION_MODE", "explo
 
 # Per-agent security levels. Each maps to an agentscope PermissionMode.
 # Default when unset: "workspace" (accept_edits — workspace-only read/write).
-# PRODUCTION_MODE floors any agent that tries to go above "workspace".
+# PRODUCTION_MODE floors 'standard' down to 'workspace' (unattended ASK for
+# dangerous ops is fragile in production). An explicit 'open' (bypass) is
+# HONORED even in production: it's an admin's deliberate per-agent trust
+# grant — without this, agents that must write outside their workspace
+# workdir (e.g. the llm-wiki-agent writing to the KB path) cannot function
+# in production, because agentscope exposes no API to register the KB path
+# as an allowed working directory. 'open' is admin-gated (PUT
+# /webui/agent-security is admin-only), so honoring it is an admin trust
+# decision, not a default.
 SecurityLevel = Literal["strict", "workspace", "standard", "open"]
 LEVEL_TO_PERMISSION_MODE: dict[str, str] = {
     "strict":    "explore",       # read-only bash; blocks ip a / curl / rm
@@ -43,14 +51,17 @@ _DEFAULT_SECURITY_LEVEL: SecurityLevel = "workspace"
 def effective_permission_mode(agent_id: str) -> str:
     """Return the agentscope permission_mode string for an agent's session.
 
-    Applies PRODUCTION_MODE floor: if enabled, 'standard' and 'open' are
-    clamped to 'workspace' so production agents can never exceed that ceiling.
+    Applies the PRODUCTION_MODE floor: when enabled, 'standard' is clamped
+    to 'workspace' (unattended ASK-for-dangerous-ops is fragile in prod).
+    An explicit 'open' (bypass) is honored even in production — it is an
+    admin's deliberate trust grant for that agent (e.g. the llm-wiki-agent,
+    which must write to the KB path outside its workspace workdir).
     """
     raw = _get_json(_agent_security_key(agent_id)) or {}
     level: str = raw.get("level", _DEFAULT_SECURITY_LEVEL)
     if level not in LEVEL_TO_PERMISSION_MODE:
         level = _DEFAULT_SECURITY_LEVEL
-    if PRODUCTION_MODE and level in ("open", "standard"):
+    if PRODUCTION_MODE and level == "standard":
         level = "workspace"
     return LEVEL_TO_PERMISSION_MODE[level]
 

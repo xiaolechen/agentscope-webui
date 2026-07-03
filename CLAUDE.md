@@ -224,7 +224,7 @@ npm run build --prefix frontend  # 生产构建（TypeScript 检查 + Vite）
 | `open` | `bypass` | 无约束；仅受信任/开发环境 |
 
 - 默认等级：`workspace`（agent 未配置时）
-- `PRODUCTION_MODE=true` 时：`open`/`standard` 被 clamp 到 `workspace`；stdio MCP 注入被过滤
+- `PRODUCTION_MODE=true` 时：`standard` 被 clamp 到 `workspace`；**显式 `open`(bypass) 仍生效**——这是 admin 对该 agent 的显式信任授权（如 llm-wiki-agent 必须写 KB 路径，而 agentscope 未暴露把 KB 路径注册为允许工作目录的 API，`workspace` 模式下写 KB 路径会 ASK 导致停泊崩溃）。`open` 由 admin 专享（PUT `/webui/agent-security` admin-only），所以尊重它是 admin 的信任决策而非默认。stdio MCP 注入仍被过滤。
 - 逻辑在 `webui_helpers.py:effective_permission_mode(agent_id)` 中集中实现
 - `session_router.py:apply_session_workspace` 每次发消息前调用此函数 PATCH session
 - 网络层隔离（防止 agent curl 外网）需在基础设施层配置（Docker network policy 或 iptables）
