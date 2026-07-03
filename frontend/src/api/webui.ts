@@ -222,7 +222,7 @@ export const webuiApi = {
   // ── Knowledge Base ────────────────────────────────────────────────────────
   getKnowledgeBases: (): Promise<KnowledgeBase[]> =>
     apiClient.get('/webui/knowledge-base').then(r => r.data),
-  addKnowledgeBase: (kb: KnowledgeBaseCreate): Promise<KnowledgeBase & { init?: { ok: boolean; error?: string } }> =>
+  addKnowledgeBase: (kb: KnowledgeBaseCreate): Promise<KnowledgeBase & { init?: { ok: boolean; error?: string; session_id?: string; agent_id?: string } }> =>
     apiClient.post('/webui/knowledge-base', kb, { timeout: 200_000 }).then(r => r.data),
   updateKnowledgeBase: (name: string, body: Partial<KnowledgeBase>): Promise<KnowledgeBase> =>
     apiClient.put(`/webui/knowledge-base/${encodeURIComponent(name)}`, body).then(r => r.data),

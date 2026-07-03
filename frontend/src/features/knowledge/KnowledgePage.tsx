@@ -61,6 +61,14 @@ export default function KnowledgePage() {
         } else {
           alert(t('knowledge.detail.initFailed', { error: data.init.error ?? '' }))
         }
+      } else if (data.init?.ok && data.init.session_id && data.name) {
+        // Pin the init session as this KB's chat session so the 检索 tab resumes
+        // it instead of creating a new one on first open. Matches the
+        // `kb-session:<name>` localStorage key ChatPage reads in KB mode.
+        localStorage.setItem(
+          `kb-session:${data.name}`,
+          JSON.stringify({ sessionId: data.init.session_id, agentId: data.init.agent_id ?? '' }),
+        )
       }
     },
     onError: (err: unknown) => {

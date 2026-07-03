@@ -155,14 +155,68 @@ def _require_kb_access(owner: str, name: str) -> dict:
     return kb
 
 
+def _all_kb_owners() -> list[str]:
+    """Every owner namespace that currently holds KB configs.
+
+    Used so admins can see/operate KBs across all users (admin shared + each
+    non-admin user's private namespace). Non-admins never call this — their
+    access is enforced by ``_config_owner`` scoping them to their own id.
+    """
+    owners: set[str] = set()
+    try:
+        pattern = _knowledge_base_key("*")
+        for key in _r().scan_iter(match=pattern, count=200):
+            if isinstance(key, bytes):
+                key = key.decode("utf-8", "ignore")
+            # key = "webui:config:knowledge-base:{owner}"
+            owner = key.split(":", 3)[-1]
+            if owner:
+                owners.add(owner)
+    except Exception as e:
+        logger.error("scan kb owners failed: %s", e)
+    return list(owners)
+
+
+def _resolve_kb_owner(user: UserInDB, name: str) -> str:
+    """The owner namespace to use for an existing KB named ``name``.
+
+    Admins can access any KB: search the shared admin namespace first, then
+    every per-user namespace — first match wins. Non-admins are scoped to
+    their own namespace (``_config_owner``), enforcing isolation. Callers
+    that 404 when the KB isn't found still go through ``_require_kb_access``.
+    """
+    if user.role != "admin":
+        return _config_owner(user)
+    if _find_kb("admin", name):
+        return "admin"
+    for owner in _all_kb_owners():
+        if owner == "admin":
+            continue
+        if _find_kb(owner, name):
+            return owner
+    return "admin"  # not found anywhere; _require_kb_access will raise 404
+
+
 # ── CRUD endpoints ────────────────────────────────────────────────────────────
 
 @router.get("/knowledge-base")
 async def list_knowledge_bases(user: UserInDB = Depends(current_user)):
-    """List KBs visible to the caller. Admins see the shared admin namespace;
-    non-admins see only their own."""
-    owner = _config_owner(user)
-    return _get_list(_knowledge_base_key(owner))
+    """List KBs visible to the caller.
+
+    Admins see **every** KB — the shared admin namespace plus each non-admin
+    user's private namespace. Non-admins see only their own. Names are deduped
+    (admin namespace wins on collision) so the frontend's by-name keying stays
+    stable.
+    """
+    if user.role != "admin":
+        return _get_list(_knowledge_base_key(_config_owner(user)))
+    seen: dict[str, dict] = {}
+    for owner in ["admin", *_all_kb_owners()]:
+        for kb in _get_list(_knowledge_base_key(owner)):
+            name = kb.get("name")
+            if name and name not in seen:
+                seen[name] = kb
+    return list(seen.values())
 
 
 @router.post("/knowledge-base")
@@ -227,7 +281,7 @@ async def update_knowledge_base(
     user: UserInDB = Depends(current_user),
 ):
     """Update editable KB fields. ``name`` and ``path`` are immutable."""
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kbs = _get_list(_knowledge_base_key(owner))
     raw = _find_kb(owner, name)
     if not raw:
@@ -248,7 +302,7 @@ async def toggle_knowledge_base(
     body: dict,
     user: UserInDB = Depends(current_user),
 ):
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kbs = _get_list(_knowledge_base_key(owner))
     raw = _find_kb(owner, name)
     if not raw:
@@ -266,7 +320,7 @@ async def delete_knowledge_base(
     name: str,
     user: UserInDB = Depends(current_user),
 ):
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kbs = _get_list(_knowledge_base_key(owner))
     raw = _find_kb(owner, name)
     if not raw:
@@ -290,7 +344,7 @@ async def list_files(name: str, user: UserInDB = Depends(current_user)):
     lets you *edit* text files, but you can still see (and read) everything.
     ``.git`` internals are skipped to keep the tree clean.
     """
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     kb_root = _resolve_kb_path(kb)
     if not os.path.isdir(kb_root):
@@ -322,7 +376,7 @@ async def list_files(name: str, user: UserInDB = Depends(current_user)):
 
 @router.get("/knowledge-base/{name}/files/read")
 async def read_file(name: str, file: str, user: UserInDB = Depends(current_user)):
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     kb_root = _resolve_kb_path(kb)
     full = _safe_rel_path(kb_root, file)
@@ -347,7 +401,7 @@ async def write_file(
     body: FileWriteBody,
     user: UserInDB = Depends(current_user),
 ):
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     kb_root = _resolve_kb_path(kb)
     full = _safe_rel_path(kb_root, body.path)
@@ -371,7 +425,7 @@ async def delete_file(
     file: str,
     user: UserInDB = Depends(current_user),
 ):
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     kb_root = _resolve_kb_path(kb)
     full = _safe_rel_path(kb_root, file)
@@ -391,7 +445,7 @@ async def upload_file(
     file: UploadFile = File(...),
     user: UserInDB = Depends(current_user),
 ):
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     kb_root = _resolve_kb_path(kb)
 
@@ -580,7 +634,7 @@ async def _trigger_agent_action(
     except Exception as e:
         logger.error("agent action error: kb_path=%s error=%s", kb_path, e)
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "session_id": session_id}
+    return {"ok": True, "session_id": session_id, "agent_id": agent_id}
 
 
 async def _drain_stream_until_done(
@@ -693,7 +747,7 @@ async def create_kb_session(
     knows which knowledge base to query. Returns ``{session_id, agent_id}``
     so the frontend can connect to the SSE stream directly.
     """
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     agent_id = await _find_llm_wiki_agent(request)
     kb_path = _resolve_kb_path(kb)
@@ -738,7 +792,7 @@ async def chat_with_kb(
     ChatPage. The KB path is prepended to the user's input so the agent's
     llm-wiki skill knows which knowledge base to检索.
     """
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     session_id = (body.get("session_id") or "").strip()
     message = (body.get("message") or "").strip()
@@ -783,7 +837,7 @@ async def build_knowledge_base(
     Creates a one-shot session and asks the agent to build. The build itself
     happens inside the agent's llm-wiki skill.
     """
-    owner = _config_owner(user)
+    owner = _resolve_kb_owner(user, name)
     kb = _require_kb_access(owner, name)
     kb_path = _resolve_kb_path(kb)
     result = await _trigger_agent_action(
