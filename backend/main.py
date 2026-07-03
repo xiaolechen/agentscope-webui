@@ -158,6 +158,7 @@ import schedule_router
 import agent_config_router
 import session_router
 import model_router
+import knowledge_base_router
 import redis_browser_router
 import webui_helpers
 
@@ -171,6 +172,7 @@ app.include_router(schedule_router.router)
 app.include_router(agent_config_router.router)
 app.include_router(session_router.router)
 app.include_router(model_router.router)
+app.include_router(knowledge_base_router.router)
 app.include_router(redis_browser_router.router)
 
 # Migrate per-admin MCP/skill config into the shared `admin` namespace so all

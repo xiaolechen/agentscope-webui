@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { webuiApi } from '@/api/webui'
+import { webuiApi, type SkillDef } from '@/api/webui'
 import { useAuthStore } from '@/store/auth'
-import { Search, Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { Search, Loader2, CheckCircle2, XCircle, Eye, Pencil, Save, X } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const PAGE = 10
 
@@ -27,6 +29,7 @@ export default function SkillsPage() {
   const [command, setCommand] = useState('')
   const [targetDir, setTargetDir] = useState('')
   const [result, setResult] = useState<InstallResult | null>(null)
+  const [previewSkill, setPreviewSkill] = useState<SkillDef | null>(null)
 
   const { data: skills = [], isLoading } = useQuery({ queryKey: ['skill-lib'], queryFn: webuiApi.getSkillLib })
   const { data: skillDirs = [] } = useQuery({
@@ -105,8 +108,9 @@ export default function SkillsPage() {
         {isLoading && <p className="text-sm" style={{ color: 'var(--as-ink-48)' }}>{t('common.status.loading')}</p>}
 
         {paged.map((s) => (
-          <div key={s.path} className="flex items-center gap-3 p-3 rounded-[var(--as-r-md)] bg-white transition-opacity"
-            style={{ border: '1px solid var(--as-hairline)', opacity: s.is_enabled ? 1 : 0.55 }}>
+          <div key={s.path} className="flex items-center gap-3 p-3 rounded-[var(--as-r-md)] bg-white transition-colors cursor-pointer hover:bg-[var(--as-parchment)]"
+            style={{ border: '1px solid var(--as-hairline)', opacity: s.is_enabled ? 1 : 0.55 }}
+            onClick={() => setPreviewSkill(s)}>
             <ToggleBtn path={s.path} is_enabled={s.is_enabled} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate"
@@ -115,6 +119,7 @@ export default function SkillsPage() {
               </p>
               <p className="text-xs truncate font-mono mt-0.5" style={{ color: 'var(--as-ink-48)' }}>{s.path}</p>
             </div>
+            <Eye size={15} className="shrink-0" style={{ color: 'var(--as-ink-48)' }} />
           </div>
         ))}
 
@@ -138,6 +143,14 @@ export default function SkillsPage() {
           </div>
         )}
       </div>
+
+      {previewSkill && (
+        <SkillPreviewModal
+          skill={previewSkill}
+          isAdmin={isAdmin}
+          onClose={() => setPreviewSkill(null)}
+        />
+      )}
 
       {showAdd && (
         <div className="as-overlay">
@@ -208,6 +221,111 @@ export default function SkillsPage() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Skill preview/edit modal — renders SKILL.md as markdown, with an admin-only
+// edit mode that swaps in a textarea and writes back to disk on save.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SkillPreviewModal({ skill, isAdmin, onClose }: {
+  skill: SkillDef
+  isAdmin: boolean
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [content, setContent] = useState('')
+  const [dirty, setDirty] = useState(false)
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['skill-content', skill.path],
+    queryFn: () => webuiApi.getSkillContent(skill.path),
+    retry: false,
+  })
+
+  // Load fetched content into local editor state. Respects user edits: once
+  // the user has touched the textarea (dirty), we don't clobber their text.
+  useEffect(() => {
+    if (data && !dirty) setContent(data.content)
+  }, [data, dirty])
+
+  const saveMut = useMutation({
+    mutationFn: () => webuiApi.writeSkillContent(skill.path, content),
+    onSuccess: () => {
+      setDirty(false); setEditing(false)
+      qc.invalidateQueries({ queryKey: ['skill-content', skill.path] })
+      qc.invalidateQueries({ queryKey: ['skill-lib'] })
+    },
+  })
+
+  const loadedContent = data?.content ?? ''
+  const readError = error ? ((error as any)?.response?.data?.detail ?? t('common.error.requestFailed')) : null
+
+  return (
+    <div className="as-overlay" onClick={onClose}>
+      <div className="as-dialog flex flex-col" style={{ maxWidth: 820, width: '92vw', maxHeight: '88vh' }}
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3 shrink-0">
+          <h3 className="text-base font-semibold flex-1 truncate" style={{ color: 'var(--as-ink)' }}>{skill.name}</h3>
+          <button onClick={onClose} className="as-btn as-btn-ghost as-btn-sm" style={{ padding: '4px' }}>
+            <X size={15} />
+          </button>
+        </div>
+        <p className="text-xs font-mono truncate mb-3 shrink-0" style={{ color: 'var(--as-ink-48)' }}>{skill.path}</p>
+
+        <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
+          {editing ? (
+            <>
+              <button onClick={() => { setEditing(false); setDirty(false); setContent(loadedContent) }}
+                className="as-btn as-btn-ghost as-btn-sm">{t('common.button.cancel')}</button>
+              <button onClick={() => saveMut.mutate()} disabled={!dirty || saveMut.isPending}
+                className="as-btn as-btn-primary as-btn-sm">
+                {saveMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                <span className="ml-1">{t('skills.preview.save')}</span>
+              </button>
+            </>
+          ) : (
+            isAdmin && (
+              <button onClick={() => setEditing(true)} className="as-btn as-btn-ghost as-btn-sm">
+                <Pencil size={12} /> <span className="ml-1">{t('skills.preview.edit')}</span>
+              </button>
+            )
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto rounded-[var(--as-r-sm)]"
+          style={{ border: '1px solid var(--as-hairline)', background: 'var(--as-canvas)' }}>
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full p-6">
+              <Loader2 size={20} className="animate-spin" style={{ color: 'var(--as-ink-48)' }} />
+            </div>
+          ) : readError ? (
+            <div className="p-6 text-sm text-center" style={{ color: 'rgb(185,28,28)' }}>{String(readError)}</div>
+          ) : editing ? (
+            <textarea
+              value={content}
+              onChange={e => { setContent(e.target.value); setDirty(true) }}
+              spellCheck={false}
+              className="w-full h-full resize-none outline-none p-4 font-mono text-sm"
+              style={{ background: 'var(--as-canvas)', color: 'var(--as-ink)', border: 'none', minHeight: 320 }}
+            />
+          ) : (
+            <div className="as-markdown p-4">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            </div>
+          )}
+        </div>
+
+        {saveMut.isError && (
+          <p className="text-xs mt-2 shrink-0" style={{ color: 'rgb(185,28,28)' }}>
+            {(saveMut.error as any)?.response?.data?.detail ?? t('common.error.requestFailed')}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Enable/disable toggle (kept as its own component to preserve the original
 // mutation wiring without re-deriving the query client in the list map).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +340,7 @@ function ToggleBtn({ path, is_enabled }: { path: string; is_enabled: boolean }) 
   })
   return (
     <button
-      onClick={() => toggleMut.mutate({ path, is_enabled: !is_enabled })}
+      onClick={(e) => { e.stopPropagation(); toggleMut.mutate({ path, is_enabled: !is_enabled }) }}
       disabled={toggleMut.isPending}
       className="shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors disabled:opacity-50"
       style={is_enabled

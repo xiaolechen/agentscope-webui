@@ -5,6 +5,7 @@
   "nav": {
     "chat": "对话",
     "sessions": "会话",
+    "knowledge": "知识库",
     "agents": "Agent",
     "skills": "Skill",
     "mcp": "MCP",
@@ -77,13 +78,17 @@
     },
     "skill": {
       "button": "Skill",
+      "add": "添加 Skill",
       "prompt": "使用 skill「{{name}}」",
       "injectFailed": "skill 注入失败：{{error}}",
+      "removeFailed": "skill 移除失败：{{error}}",
+      "boundBadge": "自带",
+      "addedBadge": "新增",
       "picker": {
         "title": "选择 Skill",
-        "subtitle": "选择一个该 Agent 绑定的 skill 调用",
+        "subtitle": "选择一个 skill 加入本次对话",
         "searchPlaceholder": "搜索 skill 名称…",
-        "noMatch": "没有匹配的 skill"
+        "noMatch": "没有可添加的 skill"
       }
     },
     "empty": {
@@ -102,7 +107,11 @@
       "createAgent": "创建 Agent",
       "agent": "Agent",
       "send": "发送",
-      "stop": "终止"
+      "stop": "终止",
+      "newSession": "新会话"
+    },
+    "badge": {
+      "kb": "知识库"
     },
     "warning": {
       "noModel": "尚未配置模型。前往 ",
@@ -238,6 +247,11 @@
       "enabled": "已启用",
       "disabled": "已禁用"
     },
+    "preview": {
+      "open": "预览",
+      "edit": "编辑",
+      "save": "保存"
+    },
     "empty": {
       "noSkills": "尚无 Skill，请到 Settings → Skill Paths 添加路径。",
       "noMatch": "无匹配结果。"
@@ -347,6 +361,61 @@
       "test": "测试",
       "testing": "测试中…",
       "testFail": "失败"
+    }
+  },
+  "knowledge": {
+    "title": "知识库",
+    "button": {
+      "create": "创建知识库",
+      "build": "构建索引"
+    },
+    "badge": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "dialog": {
+      "create": "创建知识库",
+      "edit": "编辑知识库"
+    },
+    "form": {
+      "name": "名称",
+      "namePlaceholder": "my-wiki",
+      "nameHint": "仅限字母、数字、下划线、连字符",
+      "displayName": "显示名称",
+      "displayNamePlaceholder": "我的知识库",
+      "path": "路径",
+      "pathPlaceholder": "留空则使用默认路径",
+      "pathHint": "默认：LLM_WIKI_PATH/{用户}/{名称}",
+      "autoUpdate": "定时更新",
+      "cronExpression": "Cron 表达式",
+      "cronHint": "如 0 2 * * * 表示每天凌晨2点"
+    },
+    "empty": {
+      "noDataHint": "暂无知识库，点击创建"
+    },
+    "deleteConfirm": "确定删除知识库 {{name}} 吗？",
+    "detail": {
+      "files": "文件",
+      "noFiles": "暂无文件，点击上传按钮添加",
+      "selectFile": "从左侧选择一个文件进行编辑",
+      "upload": "上传文件",
+      "save": "保存",
+      "saved": "已保存",
+      "collapseAll": "全部折叠",
+      "expandAll": "全部展开",
+      "refresh": "刷新",
+      "deleteFileConfirm": "确定删除 {{name}} 吗？",
+      "unsupportedType": "仅支持 .md / .mdx / .txt 文件",
+      "tabs": {
+        "edit": "编辑",
+        "chat": "检索"
+      },
+      "chatEmpty": "输入问题，检索当前知识库",
+      "chatPlaceholder": "输入问题，检索知识库…",
+      "chatLaunchHint": "将在对话页面使用 llm-wiki-agent 与知识库「{{name}}」对话",
+      "launchChat": "前往对话",
+      "agentNotFound": "未找到 llm-wiki-agent，请先创建一个名为 llm-wiki-agent 的 agent 并绑定 llm-wiki skill",
+      "initFailed": "知识库初始化失败：{{error}}"
     }
   },
   "schedules": {

@@ -106,6 +106,13 @@ async def apply_session_workspace(
     if not agent_id or not session_id:
         raise HTTPException(400, "agent_id and session_id required")
 
+    # Skill paths the chat user explicitly removed for this session — skip them
+    # so a "removed before first send" skill never reaches the workspace.
+    disabled_skill_paths: set = {
+        str(p).strip() for p in (body.get("disabled_skill_paths") or [])
+        if str(p).strip()
+    }
+
     headers = _forward_auth_headers(request)
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -166,7 +173,10 @@ async def apply_session_workspace(
             mcps_added = len(to_add) - len(mcp_errors)
 
         # ── Skills ────────────────────────────────────────────────────────────
-        skill_paths = _get_list(f"webui:config:agent-skills:{agent_id}")
+        skill_paths = [
+            p for p in _get_list(f"webui:config:agent-skills:{agent_id}")
+            if p not in disabled_skill_paths
+        ]
 
         async def _post_skill(skill_path: str) -> bool:
             skill_dir = str(pathlib.Path(skill_path).parent)
@@ -243,4 +253,39 @@ async def inject_session_skill(
         )
     if not resp.is_success:
         raise HTTPException(resp.status_code, f"skill inject failed: {resp.text}")
+    return {"ok": True}
+
+
+@router.delete("/session-skill")
+async def remove_session_skill(
+    body: dict,
+    request: Request,
+    _: UserInDB = Depends(current_user),
+):
+    """Remove a skill from an active session workspace for this chat.
+
+    Used by the chat skill-chip "x" button to drop a bound or added skill for
+    the current session only (the agent's bound-skill config is untouched).
+
+    Forwards the caller's JWT to the agentscope DELETE /workspace/skill/{name}
+    endpoint. `skill_name` is the agent-facing name (SKILL.md frontmatter name,
+    which the webui treats as equal to the skill directory name).
+    """
+    from urllib.parse import quote
+
+    agent_id = body.get("agent_id", "").strip()
+    session_id = body.get("session_id", "").strip()
+    skill_name = body.get("skill_name", "").strip()
+    if not (agent_id and session_id and skill_name):
+        raise HTTPException(400, "agent_id, session_id, skill_name required")
+
+    headers = _forward_auth_headers(request)
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.delete(
+            f"{AGENTSCOPE_BASE}/workspace/skill/{quote(skill_name, safe='')}",
+            params={"agent_id": agent_id, "session_id": session_id},
+            headers=headers,
+        )
+    if not resp.is_success:
+        raise HTTPException(resp.status_code, f"skill remove failed: {resp.text}")
     return {"ok": True}

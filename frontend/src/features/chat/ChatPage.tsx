@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -13,7 +13,7 @@ import SkillPickerModal from './SkillPickerModal'
 import MessageContent from './renderers/MessageContent'
 import { fileToBlock, FILE_ACCEPT, type ContentBlock } from './attachments/fileToBlocks'
 import { useSSEStream } from './useSSEStream'
-import { Send, Square, AlertTriangle, Bot, Plus, Loader2, Paperclip, Wand2, X } from 'lucide-react'
+import { Send, Square, AlertTriangle, Bot, Plus, Loader2, Paperclip, Wand2, X, SquarePen } from 'lucide-react'
 
 function uid() { return crypto.randomUUID() }
 function buildUserMsg(text: string, blocks: ContentBlock[] = []) {
@@ -42,8 +42,15 @@ export default function ChatPage() {
   const [attachments, setAttachments] = useState<ContentBlock[]>([])
   const [attachErrors, setAttachErrors] = useState<{ name: string; key: 'tooLarge' | 'unsupported' }[]>([])
   const [skillPickerOpen, setSkillPickerOpen] = useState(false)
-  const [pendingSkill, setPendingSkill] = useState<SkillDef | null>(null)
   const [skillError, setSkillError] = useState<string | null>(null)
+  // Extra (non-bound) skills the user attached to this chat via the "+ add"
+  // chip. Bound skills ship with the agent and aren't removable from here.
+  const [addedSkills, setAddedSkills] = useState<SkillDef[]>([])
+  // KB search-tab context. When ChatPage is embedded in a KB's 检索 tab, the
+  // chatWithKB handoff sets these so every message is scoped to the KB path,
+  // and one session per KB is pinned (resumed on reopen instead of remade).
+  const [kbPrefix, setKbPrefix] = useState<string | null>(null)
+  const [kbName, setKbName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -65,6 +72,33 @@ export default function ChatPage() {
     enabled: !!agentId,
   })
   const enabledBoundSkills = (boundSkills as SkillDef[]).filter(s => s.is_enabled)
+
+  // Full skill library — the "+ add" chip picker draws addable (non-active)
+  // skills from here for admins (non-admins get an empty list). Bound skills
+  // ship with the agent and are not removable from the chat (configure them on
+  // the Agents page); only skills the user attaches here get an "x".
+  const { data: skillLib = [] } = useQuery({
+    queryKey: ['skill-lib'],
+    queryFn: () => webuiApi.getSkillLib(),
+  })
+
+  // Skills reachable from the "+ add" picker: enabled, not already active
+  // (active = bound skills + user-added skills).
+  const addableSkills = useMemo(() => {
+    const activePaths = new Set([
+      ...enabledBoundSkills.map(s => s.path),
+      ...addedSkills.map(s => s.path),
+    ])
+    const seen = new Set<string>()
+    const out: SkillDef[] = []
+    for (const s of (skillLib as SkillDef[])) {
+      if (!s.is_enabled) continue
+      if (activePaths.has(s.path) || seen.has(s.path)) continue
+      seen.add(s.path)
+      out.push(s)
+    }
+    return out
+  }, [enabledBoundSkills, skillLib, addedSkills])
 
   // Preset questions for this agent — shown as clickable chips in the empty
   // state to guide the user. Clicking one sends it as the first message.
@@ -178,6 +212,53 @@ export default function ChatPage() {
     } catch {}
   }, [])
 
+  // Knowledge Base handoff: pre-select the llm-wiki-agent and pre-fill the
+  // input with the KB context prefix so the agent knows which KB to query.
+  // Stashed by the KB detail page's "检索" tab as {agentId, prefix, kbName}.
+  // kbName pins one session per KB in localStorage — reopening the tab resumes
+  // the existing conversation instead of starting a fresh one each time.
+  useEffect(() => {
+    const raw = sessionStorage.getItem('chatWithKB')
+    if (!raw) return
+    sessionStorage.removeItem('chatWithKB')
+    try {
+      const { agentId: aid, prefix, kbName: kbn } = JSON.parse(raw)
+      if (!aid) return
+      setAgentId(aid); setMessages([]); reset()
+      setWorkspaceApplied(false); setMcpInjectErrors([])
+      setAddedSkills([]); setSkillError(null)
+      setKbPrefix(prefix ?? null)
+      setKbName(kbn ?? null)
+      loadAgentModel(aid)
+
+      // Resume the pinned KB session if one exists; otherwise start fresh.
+      // The KB path prefix is NOT put in the input box — the top-right KB
+      // badge already identifies the library, and sendText auto-attaches the
+      // prefix to every message on send. Less visual noise in the textarea.
+      const pinned = kbn ? localStorage.getItem(`kb-session:${kbn}`) : null
+      if (pinned) {
+        try {
+          const { sessionId: sid } = JSON.parse(pinned)
+          setSessionId(sid)
+          sessionsApi.messages(sid, aid, 0, 50).then((data: any) => {
+            const msgs: DisplayMsg[] = (data.messages ?? [])
+              .map((m: any) => ({
+                id: m.id ?? uid(),
+                role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+                content: (m.content ?? []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join(''),
+              }))
+              .filter((m: DisplayMsg) => m.content)
+            setMessages(msgs)
+          }).catch(err => console.warn('[kb-resume] load history failed:', err))
+        } catch {
+          setSessionId(null)
+        }
+      } else {
+        setSessionId(null)
+      }
+    } catch {}
+  }, [])
+
   // On entry with multiple agents and no pre-selected handoff, pop a picker modal.
   // Runs AFTER the handoff effects above so that a resume / "chat with" / schedule
   // run — which already determines the agent — has set agentId, and we don't pop.
@@ -191,14 +272,37 @@ export default function ChatPage() {
   const handleAgentChange = async (id: string) => {
     setAgentId(id); setSessionId(null); setMessages([]); reset()
     setWorkspaceApplied(false); setMcpInjectErrors([])
+    setAddedSkills([]); setSkillError(null)
     if (id) await loadAgentModel(id)
   }
 
   const startSession = async (aid: string, cfg: ChatModelConfig) => {
     const sid = await sessionsApi.create(aid, `Chat ${new Date().toLocaleTimeString()}`, cfg)
     webuiApi.trackSession(sid, aid).catch(() => {})
+    // Pin the new session to this KB so reopening the 检索 tab resumes it
+    // instead of creating yet another session.
+    if (kbName) {
+      localStorage.setItem(`kb-session:${kbName}`, JSON.stringify({ sessionId: sid, agentId: aid }))
+    }
     setSessionId(sid); setMessages([])
     return sid
+  }
+
+  // "New session" — drop the current conversation so the next send starts fresh.
+  // In KB mode this also clears the pinned KB session (the next send creates a
+  // new one and re-pins it). The prefix is auto-attached on send, so we don't
+  // touch the input box here.
+  const startNewSession = () => {
+    reset()
+    setSessionId(null)
+    setMessages([])
+    setWorkspaceApplied(false)
+    setMcpInjectErrors([])
+    setAddedSkills([])
+    setSkillError(null)
+    if (kbName) {
+      localStorage.removeItem(`kb-session:${kbName}`)
+    }
   }
 
   // Inject agent's configured MCPs and Skills into the workspace whenever a
@@ -247,13 +351,33 @@ export default function ChatPage() {
   const removeAttachment = (id: string) =>
     setAttachments(prev => prev.filter(b => b.id !== id))
 
+  // "+ add skill" picker: re-activate a removed bound skill, or attach a new
+  // (non-bound) skill for this session. Bound skills keep the bound chip style;
+  // non-bound skills show as "added" with a distinct color.
+  // "+ add skill" picker: attach a non-bound skill to this chat. Bound skills
+  // ship with the agent and aren't manageable from here.
   const onPickSkill = (skill: SkillDef) => {
     setSkillPickerOpen(false)
-    setPendingSkill(skill)
     setSkillError(null)
-    // Pre-fill the input with a skill-use prompt; user appends their task then sends.
-    setInput(prev => `${t('chat.skill.prompt', { name: skill.name })}：${prev}`)
+    setAddedSkills(prev => prev.some(s => s.path === skill.path) ? prev : [...prev, skill])
+    if (sessionId) {
+      webuiApi.injectSessionSkill(agentId!, sessionId, skill.path).catch(err => {
+        const msg = err?.response?.data?.detail ?? err?.message ?? 'unknown'
+        setSkillError(t('chat.skill.injectFailed', { error: String(msg) }))
+      })
+    }
     setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  // Remove an added (non-bound) skill for this session.
+  const removeAddedSkill = (skill: SkillDef) => {
+    setAddedSkills(prev => prev.filter(s => s.path !== skill.path))
+    if (sessionId) {
+      webuiApi.removeSessionSkill(agentId!, sessionId, skill.name).catch(err => {
+        const msg = err?.response?.data?.detail ?? err?.message ?? 'unknown'
+        setSkillError(t('chat.skill.removeFailed', { error: String(msg) }))
+      })
+    }
   }
 
   const sendText = async (text: string) => {
@@ -262,10 +386,8 @@ export default function ChatPage() {
     if (!cfg) { setNoModelWarning(true); return }
 
     const blocks = attachments
-    const skill = pendingSkill
     setSending(true)
     setAttachments([])
-    setPendingSkill(null)
     try {
       let sid = sessionId
 
@@ -276,21 +398,32 @@ export default function ChatPage() {
         await sessionsApi.update(sid, agentId, { chat_model_config: cfg } as any).catch(() => {})
       }
 
-      // Inject the picked skill into this session before triggering, so the
-      // model's toolkit includes it this turn. Idempotent (SHA-256 dedup),
-      // so safe even for already-bound skills.
-      const injectSkill = (targetSid: string) =>
-        skill
-          ? webuiApi.injectSessionSkill(agentId!, targetSid, skill.path)
-              .catch(err => {
-                const msg = err?.response?.data?.detail ?? err?.message ?? 'unknown'
-                setSkillError(t('chat.skill.injectFailed', { error: String(msg) }))
-              })
-          : Promise.resolve()
-      await injectSkill(sid)
+      // Inject only the user-attached (non-bound) skills for this turn. Bound
+      // skills are injected once by applyAgentWorkspace (failures are logged
+      // server-side as warnings, not surfaced); re-injecting them here every
+      // turn would re-trigger validation errors for any malformed bound skill
+      // and spam the chat with "inject failed" banners. Added skills attached
+      // before the session existed are injected here on first send; ones added
+      // mid-session were already injected at add-time (idempotent re-inject).
+      const injectAdded = (targetSid: string) =>
+        Promise.all(addedSkills.map(s =>
+          webuiApi.injectSessionSkill(agentId!, targetSid, s.path).catch(err => {
+            const msg = err?.response?.data?.detail ?? err?.message ?? 'unknown'
+            setSkillError(t('chat.skill.injectFailed', { error: String(msg) }))
+          })
+        ))
+      await injectAdded(sid)
 
-      const userMsg = buildUserMsg(text, blocks)
-      setMessages(prev => [...prev, { id: userMsg.id, role: 'user', content: text, attachments: blocks }])
+      // Auto-attach the KB path prefix to every message in KB mode. The prefix
+      // is never shown in the input box — the top-right KB badge identifies the
+      // library visually, and this prepend scopes the actual agent request.
+      const fullText = kbPrefix && !text.startsWith(kbPrefix) ? `${kbPrefix}\n\n${text}` : text
+      const userMsg = buildUserMsg(fullText, blocks)
+      // Show the user's clean text (prefix stripped) in the chat bubble.
+      const displayText = kbPrefix && fullText.startsWith(kbPrefix)
+        ? fullText.slice(kbPrefix.length).replace(/^[\s\n]+/, '')
+        : fullText
+      setMessages(prev => [...prev, { id: userMsg.id, role: 'user', content: displayText, attachments: blocks }])
 
       // Trigger chat FIRST — stream endpoint closes immediately if session is not running.
       // 500 = session in broken state (e.g. stuck on previous tool confirmation);
@@ -301,7 +434,7 @@ export default function ChatPage() {
         if (chatErr?.response?.status === 500) {
           sid = await startSession(agentId!, cfg)
           setWorkspaceApplied(false)
-          await injectSkill(sid)
+          await injectAdded(sid)
           await apiClient.post('/chat/', { agent_id: agentId, session_id: sid, input: userMsg })
         } else {
           throw chatErr
@@ -382,6 +515,19 @@ export default function ChatPage() {
             <Plus size={11} /> {t('chat.button.agent')}
           </button>
         )}
+        {kbName && (
+          <span className="text-[11px] px-2 py-0.5 rounded"
+            style={{ background: 'var(--as-parchment)', color: 'var(--as-primary)', border: '1px solid var(--as-primary)' }}
+            title={kbPrefix ?? undefined}>
+            {t('chat.badge.kb')}: {kbName}
+          </span>
+        )}
+        <button onClick={startNewSession} disabled={!sessionId && messages.length === 0}
+          title={t('chat.button.newSession')}
+          className="flex items-center gap-1 text-[12px] px-2 py-1 rounded-[var(--as-r-sm)] disabled:opacity-40"
+          style={{ color: 'var(--as-ink-48)', border: '1px solid var(--as-hairline)' }}>
+          <SquarePen size={12} /> {t('chat.button.newSession')}
+        </button>
         {sessionId && (
           <span className="text-[11px] font-mono" style={{ color: 'var(--as-ink-48)' }}>
             {sessionId.slice(0, 8)}…
@@ -489,6 +635,30 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* Active skills for this chat — bound skills the agent ships with plus
+          any the user attached. Bound chips have no "x" (configure them on the
+          Agents page); only user-added chips are removable. The two use
+          distinct colors so the user can tell them apart. */}
+      {agentId && (enabledBoundSkills.length > 0 || addedSkills.length > 0 || addableSkills.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2 shrink-0" style={{ background: 'var(--as-parchment)' }}>
+          <button
+            onClick={() => { setSkillError(null); setSkillPickerOpen(true) }}
+            disabled={!agentId || isDisabled || addableSkills.length === 0}
+            title={t('chat.skill.add')}
+            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-[var(--as-r-sm)] transition-colors disabled:opacity-40"
+            style={{ border: '1px dashed var(--as-hairline)', color: 'var(--as-ink-48)', background: 'transparent' }}
+          >
+            <Plus size={11} /> {t('chat.skill.add')}
+          </button>
+          {enabledBoundSkills.map(s => (
+            <SkillChip key={`b:${s.path}`} skill={s} variant="bound" />
+          ))}
+          {addedSkills.map(s => (
+            <SkillChip key={`a:${s.path}`} skill={s} variant="added" onRemove={() => removeAddedSkill(s)} />
+          ))}
+        </div>
+      )}
+
       {/* Pending attachments */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5 px-4 pt-2 shrink-0" style={{ background: 'var(--as-parchment)' }}>
@@ -516,11 +686,6 @@ export default function ChatPage() {
             title={t('chat.attach.button')}
             className="as-btn as-btn-ghost as-btn-sm" style={{ padding: '6px', color: 'var(--as-ink-80)' }}>
             <Paperclip size={15} />
-          </button>
-          <button onClick={() => { setSkillError(null); setSkillPickerOpen(true) }} disabled={!agentId || isDisabled}
-            title={t('chat.skill.button')}
-            className="as-btn as-btn-ghost as-btn-sm" style={{ padding: '6px', color: 'var(--as-ink-80)' }}>
-            <Wand2 size={15} />
           </button>
           <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
@@ -559,11 +724,42 @@ export default function ChatPage() {
 
       {skillPickerOpen && (
         <SkillPickerModal
-          skills={enabledBoundSkills}
+          skills={addableSkills}
           onPick={onPickSkill}
           onClose={() => setSkillPickerOpen(false)}
         />
       )}
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Skill chip — a bound or added skill shown in the chat skill row. Bound chips
+// use the primary tint; added chips use an emerald tint so the user can tell
+// shipped-with-agent skills apart from ones they attached this session.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SkillChip({ skill, variant, onRemove }: {
+  skill: SkillDef
+  variant: 'bound' | 'added'
+  onRemove?: () => void
+}) {
+  const isBound = variant === 'bound'
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-[var(--as-r-sm)]"
+      style={isBound
+        ? { background: 'var(--as-parchment)', border: '1px solid var(--as-primary)', color: 'var(--as-primary)' }
+        : { background: '#ecfdf5', border: '1px solid #10b981', color: '#047857' }}
+      title={skill.path}
+    >
+      <Wand2 size={11} />
+      <span className="max-w-[160px] truncate">{skill.name}</span>
+      {onRemove && (
+        <button onClick={onRemove} className="ml-0.5 hover:opacity-70" aria-label="remove skill">
+          <X size={11} />
+        </button>
+      )}
+    </span>
   )
 }

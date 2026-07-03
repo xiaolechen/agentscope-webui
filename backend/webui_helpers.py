@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 AGENTSCOPE_BASE = f"http://localhost:{os.getenv('BACKEND_PORT', '8000')}"
 
+# Root directory for user knowledge bases. Each KB lives under this path and
+# is initialized by the llm-wiki-agent with a row/ + index/ structure.
+LLM_WIKI_PATH: str = os.path.expanduser(os.getenv("LLM_WIKI_PATH", "~/llm-wiki"))
+
 # Production security — set PRODUCTION_MODE=true to restrict agent Bash tool
 # to read-only commands and block stdio MCP injection. Default: off (dev env).
 PRODUCTION_MODE: bool = os.getenv("PRODUCTION_MODE", "false").lower() in ("true", "1", "yes")
@@ -123,6 +127,10 @@ def _agent_security_key(agent_id: str) -> str:
     return f"webui:config:agent-security:{agent_id}"
 
 
+def _knowledge_base_key(owner: str) -> str:
+    return f"webui:config:knowledge-base:{owner}"
+
+
 # ── JWT forwarding ────────────────────────────────────────────────────────────
 
 def _forward_auth_headers(request: Request) -> dict:
@@ -155,7 +163,7 @@ def migrate_admin_shared_namespace() -> None:
     """
     r = _r()
     shared = "admin"
-    for kind in ("mcp-lib", "skill-dirs", "skill-disabled"):
+    for kind in ("mcp-lib", "skill-dirs", "skill-disabled", "knowledge-base"):
         shared_key = f"webui:config:{kind}:{shared}"
         merged = _get_list(shared_key)
         stale: list[str] = []
@@ -167,7 +175,7 @@ def migrate_admin_shared_namespace() -> None:
             if user_data.get("role") != "admin":
                 continue
             items = _get_list(k)
-            if kind == "mcp-lib":
+            if kind in ("mcp-lib", "knowledge-base"):
                 seen = {m.get("name") for m in merged if isinstance(m, dict)}
                 for m in items:
                     if isinstance(m, dict) and m.get("name") not in seen:

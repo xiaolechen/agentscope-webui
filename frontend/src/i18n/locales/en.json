@@ -5,6 +5,7 @@
   "nav": {
     "chat": "Chat",
     "sessions": "Sessions",
+    "knowledge": "Knowledge",
     "agents": "Agents",
     "skills": "Skills",
     "mcp": "MCP",
@@ -77,13 +78,17 @@
     },
     "skill": {
       "button": "Skill",
+      "add": "Add Skill",
       "prompt": "Use skill \"{{name}}\"",
       "injectFailed": "Skill inject failed: {{error}}",
+      "removeFailed": "Skill remove failed: {{error}}",
+      "boundBadge": "built-in",
+      "addedBadge": "added",
       "picker": {
         "title": "Select a skill",
-        "subtitle": "Pick a skill bound to this agent to invoke",
+        "subtitle": "Pick a skill to add to this chat",
         "searchPlaceholder": "Search skill name…",
-        "noMatch": "No matching skills"
+        "noMatch": "No skills available to add"
       }
     },
     "empty": {
@@ -102,7 +107,11 @@
       "createAgent": "Create Agent",
       "agent": "Agent",
       "send": "Send",
-      "stop": "Stop"
+      "stop": "Stop",
+      "newSession": "New session"
+    },
+    "badge": {
+      "kb": "KB"
     },
     "warning": {
       "noModel": "No model configured. Go to ",
@@ -238,6 +247,11 @@
       "enabled": "Enabled",
       "disabled": "Disabled"
     },
+    "preview": {
+      "open": "Preview",
+      "edit": "Edit",
+      "save": "Save"
+    },
     "empty": {
       "noSkills": "No skills yet. Add a path in Settings → Skill Paths.",
       "noMatch": "No matching results."
@@ -347,6 +361,61 @@
       "test": "Test",
       "testing": "Testing…",
       "testFail": "Failed"
+    }
+  },
+  "knowledge": {
+    "title": "Knowledge Base",
+    "button": {
+      "create": "Create KB",
+      "build": "Build Index"
+    },
+    "badge": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "dialog": {
+      "create": "Create Knowledge Base",
+      "edit": "Edit Knowledge Base"
+    },
+    "form": {
+      "name": "Name",
+      "namePlaceholder": "my-wiki",
+      "nameHint": "Letters, digits, underscore, hyphen only",
+      "displayName": "Display Name",
+      "displayNamePlaceholder": "My Knowledge Base",
+      "path": "Path",
+      "pathPlaceholder": "Leave empty for default path",
+      "pathHint": "Default: LLM_WIKI_PATH/{user}/{name}",
+      "autoUpdate": "Auto Update",
+      "cronExpression": "Cron Expression",
+      "cronHint": "e.g. 0 2 * * * for daily at 2am"
+    },
+    "empty": {
+      "noDataHint": "No knowledge bases yet. Click create."
+    },
+    "deleteConfirm": "Delete knowledge base {{name}}?",
+    "detail": {
+      "files": "Files",
+      "noFiles": "No files. Click upload to add one.",
+      "selectFile": "Select a file from the left to edit",
+      "upload": "Upload File",
+      "save": "Save",
+      "saved": "Saved",
+      "collapseAll": "Collapse all",
+      "expandAll": "Expand all",
+      "refresh": "Refresh",
+      "deleteFileConfirm": "Delete {{name}}?",
+      "unsupportedType": "Only .md / .mdx / .txt files are supported",
+      "tabs": {
+        "edit": "Edit",
+        "chat": "Search"
+      },
+      "chatEmpty": "Ask a question to search this knowledge base",
+      "chatPlaceholder": "Ask a question, search the KB…",
+      "chatLaunchHint": "Opens the chat page with llm-wiki-agent to chat with KB \"{{name}}\"",
+      "launchChat": "Open Chat",
+      "agentNotFound": "llm-wiki-agent not found. Please create an agent named llm-wiki-agent and bind the llm-wiki skill to it first.",
+      "initFailed": "Knowledge base init failed: {{error}}"
     }
   },
   "schedules": {

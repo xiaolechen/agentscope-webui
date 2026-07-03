@@ -7,6 +7,8 @@ import ErrorBoundary from '@/components/ErrorBoundary'
 
 const Chat        = lazy(() => import('@/features/chat/ChatPage'))
 const Sessions    = lazy(() => import('@/features/sessions/SessionsPage'))
+const Knowledge   = lazy(() => import('@/features/knowledge/KnowledgePage'))
+const KnowledgeDetail = lazy(() => import('@/features/knowledge/KnowledgeDetailPage'))
 const Agents      = lazy(() => import('@/features/agents/AgentsPage'))
 const Skills      = lazy(() => import('@/features/skills/SkillsPage'))
 const Mcp         = lazy(() => import('@/features/mcp/McpPage'))
@@ -38,6 +40,8 @@ export const router = createBrowserRouter([
         { path: '/', element: <Navigate to="/chat" replace /> },
         { path: '/chat',     element: wrap(Chat) },
         { path: '/sessions', element: wrap(Sessions) },
+        { path: '/knowledge',     element: wrap(Knowledge) },
+        { path: '/knowledge/:name', element: wrap(KnowledgeDetail) },
         {
           element: <PrivateRoute adminOnly />,
           children: [

@@ -42,6 +42,30 @@ export interface McpTestResult {
   error?: string
 }
 
+export interface KnowledgeBase {
+  name: string
+  display_name: string
+  path: string
+  auto_update: boolean
+  cron_expression: string
+  is_enabled: boolean
+}
+
+export interface KnowledgeBaseCreate {
+  name: string
+  display_name?: string
+  path?: string
+  auto_update?: boolean
+  cron_expression?: string
+}
+
+export interface FileTreeNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  children?: FileTreeNode[]
+}
+
 export const webuiApi = {
   // Default model (per-user)
   getDefaultModel: (): Promise<ChatModelConfig> =>
@@ -89,15 +113,21 @@ export const webuiApi = {
   injectSessionSkill: (agentId: string, sessionId: string, skillPath: string) =>
     apiClient.post('/webui/session-skill', { agent_id: agentId, session_id: sessionId, skill_path: skillPath }).then(r => r.data),
 
+  // Remove a skill from an active session for this chat only (skill-chip "x").
+  removeSessionSkill: (agentId: string, sessionId: string, skillName: string) =>
+    apiClient.delete('/webui/session-skill', { data: { agent_id: agentId, session_id: sessionId, skill_name: skillName } }).then(r => r.data),
+
   // Apply agent's MCPs and Skills to a session workspace.
   // Returns { ok, mcps_added, mcp_errors: [{name, error}], skills_added }
-  applyAgentWorkspace: (agentId: string, sessionId: string): Promise<{
+  // `disabledSkillPaths` skips bound skills the user removed before the session
+  // was created, so they never reach the workspace.
+  applyAgentWorkspace: (agentId: string, sessionId: string, disabledSkillPaths: string[] = []): Promise<{
     ok: boolean
     mcps_added: number
     mcp_errors: { name: string; error: string }[]
     skills_added: number
   }> =>
-    apiClient.post('/webui/session-workspace', { agent_id: agentId, session_id: sessionId }).then(r => r.data),
+    apiClient.post('/webui/session-workspace', { agent_id: agentId, session_id: sessionId, disabled_skill_paths: disabledSkillPaths }).then(r => r.data),
 
   // Credential custom models
   getCredModels: (credId: string): Promise<string[]> =>
@@ -144,6 +174,12 @@ export const webuiApi = {
     apiClient.get('/webui/skill-lib').then(r => r.data),
   toggleSkill: (path: string, is_enabled: boolean) =>
     apiClient.post('/webui/skill-lib/toggle', { path, is_enabled }).then(r => r.data),
+
+  // Skill content preview/edit — read or write a skill's SKILL.md
+  getSkillContent: (path: string): Promise<{ path: string; name: string; content: string }> =>
+    apiClient.get('/webui/skill-content', { params: { path } }).then(r => r.data),
+  writeSkillContent: (path: string, content: string) =>
+    apiClient.put('/webui/skill-content', { path, content }).then(r => r.data),
   // Install a skill via `npx skills add` into a registered skill-dir (admin-only).
   // Returns { ok, stdout, stderr, skills: [{name, path}], error? }
   installSkill: (command: string, target_dir: string, opts?: { timeout?: number }) =>
@@ -182,4 +218,45 @@ export const webuiApi = {
   // Model connectivity test
   testModel: (credentialId: string, modelName: string): Promise<{ ok: boolean; latency_ms?: number; error?: string }> =>
     apiClient.post('/webui/test-model', { credential_id: credentialId, model_name: modelName }, { timeout: 20_000 }).then(r => r.data),
+
+  // ── Knowledge Base ────────────────────────────────────────────────────────
+  getKnowledgeBases: (): Promise<KnowledgeBase[]> =>
+    apiClient.get('/webui/knowledge-base').then(r => r.data),
+  addKnowledgeBase: (kb: KnowledgeBaseCreate): Promise<KnowledgeBase & { init?: { ok: boolean; error?: string } }> =>
+    apiClient.post('/webui/knowledge-base', kb, { timeout: 200_000 }).then(r => r.data),
+  updateKnowledgeBase: (name: string, body: Partial<KnowledgeBase>): Promise<KnowledgeBase> =>
+    apiClient.put(`/webui/knowledge-base/${encodeURIComponent(name)}`, body).then(r => r.data),
+  toggleKnowledgeBase: (name: string, is_enabled: boolean): Promise<KnowledgeBase> =>
+    apiClient.patch(`/webui/knowledge-base/${encodeURIComponent(name)}`, { is_enabled }).then(r => r.data),
+  deleteKnowledgeBase: (name: string) =>
+    apiClient.delete(`/webui/knowledge-base/${encodeURIComponent(name)}`),
+
+  // KB file operations
+  getFileTree: (name: string): Promise<FileTreeNode[]> =>
+    apiClient.get(`/webui/knowledge-base/${encodeURIComponent(name)}/files`).then(r => r.data),
+  readKBFile: (name: string, filePath: string): Promise<{ path: string; content: string }> =>
+    apiClient.get(`/webui/knowledge-base/${encodeURIComponent(name)}/files/read`, { params: { file: filePath } }).then(r => r.data),
+  writeKBFile: (name: string, filePath: string, content: string) =>
+    apiClient.put(`/webui/knowledge-base/${encodeURIComponent(name)}/files/write`, { path: filePath, content }).then(r => r.data),
+  deleteKBFile: (name: string, filePath: string) =>
+    apiClient.delete(`/webui/knowledge-base/${encodeURIComponent(name)}/files/delete`, { params: { file: filePath } }),
+  uploadKBFile: (name: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiClient.post(`/webui/knowledge-base/${encodeURIComponent(name)}/files/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+
+  // KB chat (llm-wiki-agent)
+  createKBSession: (name: string): Promise<{ session_id: string; agent_id: string; kb_path: string }> =>
+    apiClient.post(`/webui/knowledge-base/${encodeURIComponent(name)}/session`).then(r => r.data),
+  chatWithKB: (name: string, session_id: string, message: string): Promise<{ ok: boolean }> =>
+    apiClient.post(`/webui/knowledge-base/${encodeURIComponent(name)}/chat`, { session_id, message }).then(r => r.data),
+  buildKnowledgeBase: (name: string): Promise<{ ok: boolean; error?: string }> =>
+    apiClient.post(`/webui/knowledge-base/${encodeURIComponent(name)}/build`, {}, { timeout: 300_000 }).then(r => r.data),
+  // Find the llm-wiki-agent's agent_id (for handing off to the main ChatPage).
+  // 404 if the user hasn't created the agent yet.
+  getKBAgentId: (): Promise<{ agent_id: string; agent_name: string }> =>
+    apiClient.get('/webui/knowledge-base/agent-id').then(r => r.data),
 }

@@ -186,6 +186,75 @@ async def toggle_skill(body: dict, user: UserInDB = Depends(current_user)):
     return {"path": path, "is_enabled": is_enabled}
 
 
+def _resolve_skill_file(path: str, owner: str) -> pathlib.Path:
+    """Resolve a SKILL.md path and verify it lives under a registered skill-dir.
+
+    Prevents path traversal / arbitrary file read: only paths that
+    `_scan_skills` would discover are readable. Returns the resolved absolute
+    Path. Raises HTTPException on any deviation.
+    """
+    if not path:
+        raise HTTPException(400, "path required")
+    dirs = _get_list(_skill_dirs_key(owner))
+    try:
+        target = pathlib.Path(path).resolve()
+    except (OSError, ValueError) as e:
+        raise HTTPException(400, f"invalid path: {e}")
+    for d in dirs:
+        try:
+            root = pathlib.Path(d).resolve()
+        except (OSError, ValueError):
+            continue
+        if target.is_relative_to(root) and target.name == "SKILL.md":
+            return target
+    raise HTTPException(403, "path is not a registered skill file")
+
+
+@router.get("/skill-content")
+async def get_skill_content(path: str, user: UserInDB = Depends(current_user)):
+    """Read a skill's SKILL.md content for previewing."""
+    owner = _config_owner(user)
+    full = _resolve_skill_file(path, owner)
+    if not full.is_file():
+        raise HTTPException(404, f"SKILL.md not found: {path}")
+    try:
+        content = full.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(415, "SKILL.md is not valid UTF-8 text")
+    except OSError as e:
+        logger.error("skill read failed: path=%s error=%s", path, e)
+        raise HTTPException(500, f"failed to read skill: {e}")
+    return {"path": str(full), "name": full.parent.name, "content": content}
+
+
+class SkillContentBody(BaseModel):
+    path: str
+    content: str
+
+
+@router.put("/skill-content")
+async def put_skill_content(
+    body: SkillContentBody,
+    user: UserInDB = Depends(admin_required),
+):
+    """Write a skill's SKILL.md content. Admin-only.
+
+    Modifying skill content on disk is a prompt-injection / SSRF surface (the
+    content is injected into LLM prompts), so it is restricted to admins.
+    """
+    owner = _config_owner(user)
+    full = _resolve_skill_file(body.path, owner)
+    if not full.is_file():
+        raise HTTPException(404, f"SKILL.md not found: {body.path}")
+    try:
+        full.write_text(body.content, encoding="utf-8")
+    except OSError as e:
+        logger.error("skill write failed: path=%s error=%s", body.path, e)
+        raise HTTPException(500, f"failed to write skill: {e}")
+    logger.info("skill updated: name=%s path=%s user=%s", full.parent.name, full, user.id)
+    return {"ok": True, "path": str(full)}
+
+
 @router.post("/skill-lib/install")
 async def install_skill(body: dict, user: UserInDB = Depends(admin_required)):
     """Install a skill via `npx skills add` into a registered skill-dir.

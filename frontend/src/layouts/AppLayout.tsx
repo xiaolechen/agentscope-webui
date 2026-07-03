@@ -4,12 +4,13 @@ import { useAuthStore } from '@/store/auth'
 import LangSwitcher from '@/components/LangSwitcher'
 import {
   MessageSquare, Clock, Bot, Wand2, Network, Key,
-  Calendar, FileText, Settings, Users, LogOut,
+  Calendar, FileText, Settings, Users, LogOut, BookOpen,
 } from 'lucide-react'
 
 const NAV = [
   { to: '/chat',         labelKey: 'nav.chat',        Icon: MessageSquare },
   { to: '/sessions',    labelKey: 'nav.sessions',    Icon: Clock },
+  { to: '/knowledge',   labelKey: 'nav.knowledge',   Icon: BookOpen },
   { to: '/agents',      labelKey: 'nav.agents',      Icon: Bot,      adminOnly: true },
   { to: '/skills',      labelKey: 'nav.skills',      Icon: Wand2,    adminOnly: true },
   { to: '/mcp',         labelKey: 'nav.mcp',         Icon: Network,  adminOnly: true },
