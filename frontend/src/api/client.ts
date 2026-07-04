@@ -21,21 +21,32 @@ apiClient.interceptors.response.use(
   r => r,
   err => {
     const status = err.response?.status
-    if (status === 401 && !_redirectingToLogin) {
-      _redirectingToLogin = true
-      // Clear both Zustand state and localStorage before navigating so any
-      // component still mounted doesn't re-request with a stale token.
-      useAuthStore.getState().logout()
-      // replace() avoids leaving the broken page in browser history.
-      window.location.replace('/login')
-    } else if (status !== 401) {
-      // Log all non-401 errors centrally so developers see them in the console
-      // even when call sites use silent .catch(() => {}) handlers.
-      const method = (err.config?.method ?? 'unknown').toUpperCase()
-      const url = err.config?.url ?? ''
-      const detail = err.response?.data?.detail ?? err.message ?? 'unknown'
-      console.error(`[api] ${method} ${url} → ${status ?? 'network'}: ${detail}`)
+    if (status === 401) {
+      // Token expired/invalid. The first 401 drives the redirect to /login;
+      // subsequent concurrent 401s (e.g. React Query refetching several stale
+      // queries at once) are swallowed by the guard. We return a perpetually-
+      // pending promise instead of rejecting: a reject would propagate to
+      // caller .catch / mutation onError handlers (e.g. KnowledgePage) that
+      // surface err.response.data.detail via alert() — popping a
+      // "Not authenticated" dialog that BLOCKS the very redirect we queued.
+      // The pending promise keeps every caller quiet while the full-page
+      // reload to /login proceeds unimpeded.
+      if (!_redirectingToLogin) {
+        _redirectingToLogin = true
+        // Clear Zustand state + localStorage so any still-mounted component
+        // doesn't re-request with the stale token before the reload lands.
+        useAuthStore.getState().logout()
+        // replace() avoids leaving the broken page in browser history.
+        window.location.replace('/login')
+      }
+      return new Promise(() => {})
     }
+    // Log non-401 errors centrally so developers see them in the console
+    // even when call sites use silent .catch(() => {}) handlers.
+    const method = (err.config?.method ?? 'unknown').toUpperCase()
+    const url = err.config?.url ?? ''
+    const detail = err.response?.data?.detail ?? err.message ?? 'unknown'
+    console.error(`[api] ${method} ${url} → ${status ?? 'network'}: ${detail}`)
     return Promise.reject(err)
   }
 )

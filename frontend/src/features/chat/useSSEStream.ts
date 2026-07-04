@@ -24,21 +24,35 @@ export interface StreamState {
 const DONE_TYPES = new Set(['REPLY_END', 'EXCEED_MAX_ITERS'])
 
 /**
- * Derive the backend's origin from the current page URL.
- * Vite's proxy buffers SSE responses (due to compression middleware),
- * so we connect directly to the backend for streaming.
+ * Resolve the SSE stream URL for the given /api/... proxy path.
  *
- * Sandbox:  https://...-5173.agent.alibaba-inc.com → https://...-8000.agent.alibaba-inc.com
- * Local dev: http://localhost:5173 → http://localhost:8000
+ * Dev (Vite): the dev server's compression middleware buffers SSE, so we
+ * bypass the /api proxy and connect directly to the backend on :8000
+ * (strip the /api prefix).
+ *
+ * Deployed (reverse proxy): there is no Vite, so we go through the SAME
+ * origin and KEEP the /api prefix — the reverse proxy is configured to
+ * route /api/* to the backend (it strips /api, same as for every other
+ * API call). Stripping /api here would send /sessions/.../stream to the
+ * static SPA server, which returns index.html (no events → stream hangs
+ * forever). agentscope sends `X-Accel-Buffering: no`, so a correctly
+ * configured nginx proxy won't buffer SSE; if your proxy buffers it, set
+ * `proxy_buffering off` for the stream path.
  */
-function getBackendOrigin(): string {
+function resolveStreamUrl(proxyUrl: string): string {
   const origin = window.location.origin
   // Sandbox URL pattern: contains port as part of subdomain
-  if (origin.match(/-5173\./)) return origin.replace('-5173.', '-8000.')
-  if (origin.match(/localhost:5173/)) return 'http://localhost:8000'
-  if (origin.match(/127\.0\.0\.1:5173/)) return 'http://127.0.0.1:8000'
-  // Unknown env — fall back to same origin (through proxy), may not stream
-  return origin
+  if (origin.match(/-5173\./)) {
+    return origin.replace('-5173.', '-8000.') + proxyUrl.replace(/^\/api/, '')
+  }
+  if (origin.match(/localhost:5173/)) {
+    return 'http://localhost:8000' + proxyUrl.replace(/^\/api/, '')
+  }
+  if (origin.match(/127\.0\.0\.1:5173/)) {
+    return 'http://127.0.0.1:8000' + proxyUrl.replace(/^\/api/, '')
+  }
+  // Deployed behind a reverse proxy — same origin, keep /api.
+  return proxyUrl
 }
 
 export function useSSEStream() {
@@ -62,11 +76,10 @@ export function useSSEStream() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    // Bypass Vite proxy — connect directly to backend to avoid SSE buffering
+    // Bypass Vite proxy in dev (it buffers SSE); in deployed envs go through
+    // the reverse proxy with the /api prefix (see resolveStreamUrl).
     // proxyUrl: /api/sessions/{id}/stream?agent_id=...
-    // directUrl: https://...-8000.../sessions/{id}/stream?agent_id=...
-    const backendPath = proxyUrl.replace(/^\/api/, '')
-    const directUrl = `${getBackendOrigin()}${backendPath}`
+    const directUrl = resolveStreamUrl(proxyUrl)
 
     const token = localStorage.getItem('token')
     const headers: HeadersInit = { 'x-user-id': WEBUI_TENANT }
