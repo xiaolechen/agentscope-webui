@@ -43,8 +43,13 @@ class UserInDB(BaseModel):
     id: str
     username: str
     hashed_password: str
-    role: str  # "admin" | "user"
+    role: str  # "admin" | "tenant_admin" | "user"
     bound_agent_ids: list[str] = []
+    # Multi-tenant fields (Phase 1). admin has tenant_id=None; tenant_admin and
+    # user carry the tenant they belong to. Defaults keep existing users valid.
+    tenant_id: Optional[str] = None
+    org_path: Optional[str] = None       # e.g. "技术部/后端组"
+    permissions: list[str] = []          # reserved for fine-grained perm codes
 
 
 # ── Redis helpers ────────────────────────────────────────────────────────────
@@ -133,21 +138,59 @@ def create_token(data: dict) -> str:
 
 
 def _bootstrap_admin():
-    """Create default admin on first run."""
+    """Create default admin + the platform 'agentscope' tenant on first run.
+
+    The admin user is a member of the agentscope tenant with role 'admin'.
+    """
+    from webui_helpers import (
+        Tenant, save_tenant, get_tenant, link_user_to_tenant,
+        _tenant_members_key, _tenant_admins_key, PLATFORM_TENANT_ID,
+        ALL_MENU_PERMS,
+    )
     admin_pw = os.getenv("ADMIN_PASSWORD", "admin123")
     if admin_pw == "admin123":
         logger.warning(
             "ADMIN_PASSWORD is using the default 'admin123'. "
             "Change it in .env before production use."
         )
+    # Ensure the platform tenant exists.
+    if not get_tenant(PLATFORM_TENANT_ID):
+        agentscope = Tenant(
+            id=PLATFORM_TENANT_ID,
+            name=PLATFORM_TENANT_ID,
+            display_name="AgentScope",
+            created_by="system",
+            created_at=datetime.utcnow().isoformat() + "Z",
+            menu_permissions=list(ALL_MENU_PERMS),
+        )
+        save_tenant(agentscope)
+        logger.info("bootstrapped platform tenant=%s", PLATFORM_TENANT_ID)
     if not get_user("admin"):
         user = UserInDB(
             id=str(uuid.uuid4()),
             username="admin",
             hashed_password=hash_password(admin_pw),
             role="admin",
+            tenant_id=PLATFORM_TENANT_ID,
         )
         save_user(user)
+    else:
+        # Existing admin (created before the v2 membership system) may lack
+        # the platform-tenant membership and active context. Re-sync them.
+        user = get_user("admin")
+        if user.tenant_id != PLATFORM_TENANT_ID or user.role != "admin":
+            user = user.model_copy(update={"tenant_id": PLATFORM_TENANT_ID, "role": "admin"})
+            save_user(user)
+    # Always ensure the admin's platform-tenant membership is registered,
+    # even when the admin user already existed (idempotent migration).
+    r = _r()
+    pipe = r.pipeline()
+    from webui_helpers import _user_memberships_key
+    pipe.hset(_user_memberships_key(user.id), PLATFORM_TENANT_ID, "admin")
+    pipe.set(f"webui:user:tenant:{user.id}", PLATFORM_TENANT_ID)
+    pipe.sadd(_tenant_members_key(PLATFORM_TENANT_ID), user.id)
+    pipe.sadd(_tenant_admins_key(PLATFORM_TENANT_ID), user.id)
+    pipe.execute()
 
 
 _bootstrap_admin()
@@ -212,16 +255,90 @@ async def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
     # Do NOT reset the counter on success — deleting it would give an attacker a
     # fresh window after each successful login, allowing unlimited brute-force
     # attempts spread across sessions. Let the TTL expire naturally.
-    token = create_token({"sub": user.id, "role": user.role})
-    logger.info("login success: username=%s role=%s ip=%s", user.username, user.role, client_ip)
-    return Token(access_token=token, token_type="bearer", role=user.role, user_id=user.id)
+
+    # Resolve the active tenant from memberships. Prefer a platform/admin
+    # membership, else the first membership; fall back to the legacy
+    # user.tenant_id for pre-migration users with no membership record.
+    from webui_helpers import get_user_memberships, PLATFORM_TENANT_ID, link_user_to_tenant
+    memberships = get_user_memberships(user.id)
+    active_tenant = user.tenant_id or ""
+    active_role = user.role
+    if memberships:
+        if PLATFORM_TENANT_ID in memberships:
+            active_tenant = PLATFORM_TENANT_ID
+            active_role = memberships[PLATFORM_TENANT_ID]
+        else:
+            active_tenant = next(iter(memberships))
+            active_role = memberships[active_tenant]
+        # Persist the resolved active context so current_user reads it.
+        user = user.model_copy(update={"tenant_id": active_tenant, "role": active_role})
+        save_user(user)
+    elif user.tenant_id:
+        # Legacy user (created before the memberships HASH existed): backfill
+        # the membership from the admin-set user.tenant_id/role so downstream
+        # membership-based checks (e.g. _assert_can_manage_tenant) pass.
+        link_user_to_tenant(user, user.tenant_id, user.role)
+        memberships = get_user_memberships(user.id)
+
+    token = create_token({
+        "sub": user.id,
+        "role": active_role,
+        # tenant_id in JWT lets downstream resolvers skip a Redis lookup on the
+        # hot path; empty string for a user with no tenant (legacy). Data-scope
+        # / permission checks still read the live record from Redis for freshness.
+        "tenant_id": active_tenant or "",
+    })
+    logger.info("login success: username=%s role=%s tenant=%s ip=%s",
+                user.username, active_role, active_tenant or "-", client_ip)
+    return Token(access_token=token, token_type="bearer", role=active_role, user_id=user.id)
+
+
+@router.post("/switch-tenant", response_model=Token)
+async def switch_tenant(target_tenant_id: str, user: UserInDB = Depends(current_user)):
+    """Switch the caller's active tenant. Returns a fresh JWT carrying the new
+    active tenant + the role the user holds *in that tenant*. The user must be
+    a member of the target tenant."""
+    from webui_helpers import get_user_member_role
+    role = get_user_member_role(user.id, target_tenant_id)
+    if not role:
+        raise HTTPException(status_code=403, detail="You are not a member of this tenant")
+    # Persist the new active context so current_user reads it on later calls.
+    updated = user.model_copy(update={"tenant_id": target_tenant_id, "role": role})
+    save_user(updated)
+    token = create_token({
+        "sub": user.id,
+        "role": role,
+        "tenant_id": target_tenant_id,
+    })
+    logger.info("tenant switch: user=%s -> tenant=%s role=%s",
+                user.username, target_tenant_id, role)
+    return Token(access_token=token, token_type="bearer", role=role, user_id=user.id)
 
 
 @router.get("/me")
 async def me(user: UserInDB = Depends(current_user)):
+    # Resolve menu permissions: admin = all; tenant members = tenant's list;
+    # a user with no tenant (legacy) gets the workspace defaults so existing
+    # non-admin logins keep seeing Chat/Sessions/Knowledge.
+    from webui_helpers import (
+        resolve_menu_permissions, get_user_memberships, get_tenant,
+    )
+    memberships = get_user_memberships(user.id)
+    membership_view = []
+    for tid, role in memberships.items():
+        t = get_tenant(tid)
+        membership_view.append({
+            "tenant_id": tid,
+            "role": role,
+            "display_name": t.display_name if t else tid,
+        })
     return {
         "id": user.id,
         "username": user.username,
         "role": user.role,
         "bound_agent_ids": user.bound_agent_ids,
+        "tenant_id": user.tenant_id,
+        "active_tenant_id": user.tenant_id,
+        "menu_permissions": resolve_menu_permissions(user),
+        "memberships": membership_view,
     }

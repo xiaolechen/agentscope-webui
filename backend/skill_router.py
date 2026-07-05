@@ -10,6 +10,7 @@ from webui_helpers import (
     _config_owner,
     _get_list, _set_list,
     _skill_dirs_key, _skill_disabled_key,
+    _allowed_skills,
 )
 
 router = APIRouter(prefix="/webui", tags=["webui"])
@@ -126,7 +127,8 @@ def _ensure_skill_dir_registered(owner: str, dir_path: str) -> None:
 
 @router.get("/skill-dirs")
 async def get_skill_dirs(user: UserInDB = Depends(current_user)):
-    return _get_list(_skill_dirs_key(_config_owner(user)))
+    # The library is admin-curated; all users read the admin namespace dirs.
+    return _get_list(_skill_dirs_key("admin"))
 
 
 @router.post("/skill-dirs")
@@ -162,16 +164,28 @@ async def delete_skill_dir(body: dict, user: UserInDB = Depends(admin_required))
 
 @router.get("/skill-lib")
 async def get_skill_lib(user: UserInDB = Depends(current_user)):
-    """Scan registered skill directories and return discovered skills."""
-    owner = _config_owner(user)
-    dirs = _get_list(_skill_dirs_key(owner))
-    disabled = set(_get_list(_skill_disabled_key(owner)))
-    return _scan_skills(dirs, disabled)
+    """Scan registered skill directories and return discovered skills.
+
+    The library is admin-curated and lives in the "admin" namespace. Non-admins
+    see only their effective scope (tenant pool for tenant_admin, per-user
+    subset for members), resolved from that admin namespace.
+    """
+    dirs = _get_list(_skill_dirs_key("admin"))
+    disabled = set(_get_list(_skill_disabled_key("admin")))
+    skills = _scan_skills(dirs, disabled)
+    allowed = _allowed_skills(user)
+    if allowed is not None:
+        skills = [s for s in skills if s.get("path") in allowed]
+    return skills
 
 
 @router.post("/skill-lib/toggle")
-async def toggle_skill(body: dict, user: UserInDB = Depends(current_user)):
-    """Enable or disable a specific skill by its SKILL.md path."""
+async def toggle_skill(body: dict, user: UserInDB = Depends(admin_required)):
+    """Enable or disable a specific skill by its SKILL.md path.
+
+    Admin-only (v2.3: the library is admin-curated; the disabled-set lives in
+    the admin namespace, so a non-admin write would have no visible effect and
+    contradicts the read-only tenant view)."""
     path = body.get("path", "").strip()
     is_enabled = body.get("is_enabled", True)
     if not path:

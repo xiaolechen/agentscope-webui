@@ -5,8 +5,14 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from auth_router import UserInDB, admin_required, current_user
-from webui_helpers import AGENTSCOPE_BASE, _get_json, _forward_auth_headers
+from auth_router import UserInDB, admin_required, current_user, _r
+from webui_helpers import (
+    AGENTSCOPE_BASE,
+    _get_json,
+    _forward_auth_headers,
+    _schedule_key,
+    _tenant_members_key,
+)
 
 router = APIRouter(prefix="/webui", tags=["webui"])
 logger = logging.getLogger(__name__)
@@ -68,14 +74,27 @@ async def create_schedule(
         logger.warning("schedule create failed: agent=%s status=%d body=%s",
                        body.agent_id, resp.status_code, resp.text[:200])
         raise HTTPException(resp.status_code, resp.text)
-    return resp.json()
+    created = resp.json()
+    # Record creator ownership so the schedule list can be scoped per-user
+    # (admin=all, tenant_admin=tenant members, member=own). Schedules are
+    # creator-owned runtime data, same model as sessions.
+    schedule_id = created.get("id") if isinstance(created, dict) else None
+    if schedule_id:
+        _r().sadd(_schedule_key(user.id), schedule_id)
+    else:
+        logger.warning(
+            "schedule create ok but no id in response — ownership not tracked: "
+            "user=%s agent=%s body=%s",
+            user.id, body.agent_id, str(created)[:200],
+        )
+    return created
 
 
 @router.post("/schedule/{schedule_id}/run")
 async def run_schedule_now(
     schedule_id: str,
     request: Request,
-    _: UserInDB = Depends(current_user),
+    user: UserInDB = Depends(current_user),
 ):
     """Look up a schedule and return its prompt + agent for the frontend to run.
 
@@ -83,7 +102,9 @@ async def run_schedule_now(
     causes a race where stream events fire before the frontend can connect SSE.
     The frontend reuses its normal send() flow instead.
 
-    Forwards the caller's JWT to the agentscope /schedule/ endpoint.
+    Forwards the caller's JWT to the agentscope /schedule/ endpoint. Enforces
+    creator-ownership scope: a non-admin may only run a schedule they own (or,
+    for tenant_admin, one owned by a member of their tenant).
     """
     headers = _forward_auth_headers(request)
 
@@ -99,12 +120,52 @@ async def run_schedule_now(
         if record is None:
             raise HTTPException(404, f"Schedule {schedule_id!r} not found")
 
+    # Scope check (defense-in-depth — the list endpoint already hides schedules
+    # the caller doesn't own, but run-now is callable by id).
+    if not _schedule_visible_to(user, schedule_id):
+        logger.warning("schedule run denied: user=%s schedule=%s", user.id, schedule_id)
+        raise HTTPException(403, "You do not have access to this schedule")
+
     data = record.get("data", {})
     return {
         "agent_id": record.get("agent_id", ""),
         "prompt": data.get("description") or data.get("name") or "Run schedule",
         "name": data.get("name", ""),
     }
+
+
+@router.get("/my-schedule-ids")
+async def my_schedule_ids(user: UserInDB = Depends(current_user)):
+    """Return schedule IDs visible to the caller.
+
+    Schedules are creator-owned (same model as sessions):
+    - admin        → ``{'all': True}`` (frontend lists every schedule)
+    - tenant_admin → union of schedules created by any member of own tenant
+    - member/legacy → only schedules created by self
+    """
+    if user.role == "admin":
+        return {"all": True}
+
+    if user.role == "tenant_admin" and user.tenant_id:
+        member_ids = _r().smembers(_tenant_members_key(user.tenant_id))
+        ids: list[str] = []
+        for mid in member_ids:
+            ids.extend(_r().smembers(_schedule_key(mid)))
+        return {"schedule_ids": ids}
+
+    return {"schedule_ids": list(_r().smembers(_schedule_key(user.id)))}
+
+
+def _schedule_visible_to(user: UserInDB, schedule_id: str) -> bool:
+    """Whether ``user`` may access ``schedule_id`` under creator-ownership rules."""
+    if user.role == "admin":
+        return True
+    if user.role == "tenant_admin" and user.tenant_id:
+        for mid in _r().smembers(_tenant_members_key(user.tenant_id)):
+            if schedule_id in _r().smembers(_schedule_key(mid)):
+                return True
+        return False
+    return schedule_id in _r().smembers(_schedule_key(user.id))
 
 
 # ── Backend restart ───────────────────────────────────────────────────────────

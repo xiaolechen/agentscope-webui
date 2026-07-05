@@ -42,17 +42,33 @@ export const router = createBrowserRouter([
         { path: '/sessions', element: wrap(Sessions) },
         { path: '/knowledge',     element: wrap(Knowledge) },
         { path: '/knowledge/:name', element: wrap(KnowledgeDetail) },
+        { path: '/schedules', element: wrap(Schedules) },
         {
+          // Configuration group — tenant-delegatable via menu permission.
+          element: <PrivateRoute requiredPermission="agents" />,
+          children: [{ path: '/agents', element: wrap(Agents) }],
+        },
+        {
+          element: <PrivateRoute requiredPermission="skills" />,
+          children: [{ path: '/skills', element: wrap(Skills) }],
+        },
+        {
+          element: <PrivateRoute requiredPermission="mcp" />,
+          children: [{ path: '/mcp', element: wrap(Mcp) }],
+        },
+        {
+          element: <PrivateRoute requiredPermission="users" />,
+          children: [{ path: '/users', element: wrap(Users) }],
+        },
+        {
+          // System group — super-admin only. logs/settings manage cross-tenant
+          // infrastructure and credentials are global; these need data-scoping
+          // before they can be safely delegated to tenants.
           element: <PrivateRoute adminOnly />,
           children: [
-            { path: '/agents',      element: wrap(Agents) },
-            { path: '/skills',      element: wrap(Skills) },
-            { path: '/mcp',         element: wrap(Mcp) },
             { path: '/credentials', element: wrap(Credentials) },
-            { path: '/schedules',   element: wrap(Schedules) },
             { path: '/logs',        element: wrap(Logs) },
             { path: '/settings',    element: wrap(SettingsPage) },
-            { path: '/users',       element: wrap(Users) },
           ],
         },
       ],

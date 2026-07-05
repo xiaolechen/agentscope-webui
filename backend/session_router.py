@@ -12,6 +12,7 @@ from webui_helpers import (
     _forward_auth_headers,
     PRODUCTION_MODE,
     effective_permission_mode,
+    user_can_access_agent,
 )
 from mcp_router import McpDef, _mcpdef_to_client
 
@@ -28,8 +29,8 @@ def _extract_detail(resp: httpx.Response) -> str:
             if isinstance(d, list) and d and isinstance(d[0], dict):
                 return d[0].get("msg") or str(d[0])
             return str(d)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("could not parse error detail from response: %s", e)
     return resp.text
 
 
@@ -51,7 +52,7 @@ async def track_session(
     if not (session_id and agent_id):
         raise HTTPException(400, "session_id and agent_id required")
 
-    if user.role != "admin" and agent_id not in user.bound_agent_ids:
+    if user.role != "admin" and not user_can_access_agent(user, agent_id):
         raise HTTPException(403, f"No access to agent '{agent_id}'")
 
     headers = _forward_auth_headers(request)
@@ -75,12 +76,31 @@ async def track_session(
 
 @router.get("/my-session-ids/{agent_id}")
 async def my_session_ids(agent_id: str, user: UserInDB = Depends(current_user)):
-    """Return session IDs owned by the calling user for the given agent.
-    Admins receive ``{'all': True}`` — the frontend shows all sessions."""
+    """Return session IDs visible to the caller for the given agent.
+
+    Data-scope rules:
+    - admin           → ``{'all': True}`` (frontend lists every session)
+    - tenant_admin    → union of sessions owned by any member of own tenant
+    - member / legacy → only sessions owned by self
+    """
     if user.role == "admin":
         return {"all": True}
-    owned: set = _r().smembers(_session_key(user.id))
+
+    from webui_helpers import _tenant_members_key
     prefix = f"{agent_id}:"
+
+    if user.role == "tenant_admin" and user.tenant_id:
+        # Tenant admin sees every member's sessions within the tenant.
+        member_ids = _r().smembers(_tenant_members_key(user.tenant_id))
+        ids: list[str] = []
+        for mid in member_ids:
+            for entry in _r().smembers(_session_key(mid)):
+                if entry.startswith(prefix):
+                    ids.append(entry.split(":", 1)[1])
+        return {"session_ids": ids}
+
+    # Member or legacy user: own sessions only.
+    owned: set = _r().smembers(_session_key(user.id))
     ids = [entry.split(":", 1)[1] for entry in owned if entry.startswith(prefix)]
     return {"session_ids": ids}
 

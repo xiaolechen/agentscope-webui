@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useAuthStore } from '@/store/auth'
 import { schedulesApi } from '@/api/schedules'
 import { agentsApi } from '@/api/agents'
 import { webuiApi } from '@/api/webui'
@@ -37,10 +38,16 @@ export default function SchedulesPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const role = useAuthStore(s => s.role)
+  const boundAgentIds = useAuthStore(s => s.boundAgentIds)
   const [showAdd, setShowAdd] = useState(false)
   const [page, setPage] = useState(0)
   const { data: schedules = [] } = useQuery({ queryKey: ['schedules'], queryFn: schedulesApi.list })
   const { data: agents = [] } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list })
+  // Non-admins can only schedule agents they can access (mirrors SessionsPage).
+  const createableAgents: any[] = role === 'admin'
+    ? (agents as any[])
+    : (agents as any[]).filter(a => boundAgentIds.includes(a.id))
   const { register, handleSubmit, reset } = useForm({
     defaultValues: {
       agent_id: '',
@@ -155,7 +162,7 @@ export default function SchedulesPage() {
                 <Label text={t('schedules.form.agent')} />
                 <select {...register('agent_id', { required: true })} className={inputCls} style={inputStyle}>
                   <option value="">{t('schedules.form.selectAgent')}</option>
-                  {(agents as any[]).map((a: any) => <option key={a.id} value={a.id}>{a.data.name}</option>)}
+                  {createableAgents.map((a: any) => <option key={a.id} value={a.id}>{a.data.name}</option>)}
                 </select>
               </div>
 

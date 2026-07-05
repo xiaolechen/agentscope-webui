@@ -5,8 +5,8 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from auth_router import UserInDB, current_user
-from webui_helpers import _config_owner, _get_list, _set_list, _mcp_key, PRODUCTION_MODE
+from auth_router import UserInDB, current_user, admin_required
+from webui_helpers import _config_owner, _get_list, _set_list, _mcp_key, _allowed_mcps, PRODUCTION_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -195,12 +195,21 @@ async def _run_mcp_test(mcp: McpDef) -> dict:
 
 @router.get("/mcp-lib")
 async def get_mcp_lib(user: UserInDB = Depends(current_user)):
+    # The library is admin-curated and lives in the "admin" config namespace.
+    # Non-admins see only their effective scope (tenant pool for tenant_admin,
+    # per-user subset for members), resolved from that admin namespace.
+    mcps = _get_list(_mcp_key("admin"))
+    allowed = _allowed_mcps(user)
+    if allowed is not None:
+        mcps = [m for m in mcps if m.get("name") in allowed]
     # Strip auth_token so the secret never reaches the browser.
-    return [{**m, "auth_token": ""} for m in _get_list(_mcp_key(_config_owner(user)))]
+    return [{**m, "auth_token": ""} for m in mcps]
 
 
 @router.post("/mcp-lib")
-async def add_mcp(mcp: McpDef, user: UserInDB = Depends(current_user)):
+async def add_mcp(mcp: McpDef, user: UserInDB = Depends(admin_required)):
+    """Register a new MCP in the admin library. Admin-only (v2.3: the library
+    is admin-curated; non-admins get a scoped read-only view, never write)."""
     _require_stdio_admin(mcp, user)
     _validate_mcp_fields(mcp)
     if PRODUCTION_MODE and mcp.transport == "stdio":
@@ -215,11 +224,13 @@ async def add_mcp(mcp: McpDef, user: UserInDB = Depends(current_user)):
         raise HTTPException(409, f"MCP '{mcp.name}' already exists")
     mcps.append(mcp.model_dump())
     _set_list(_mcp_key(owner), mcps)
-    return mcp
+    # Strip auth_token so the server-side secret never reaches the browser
+    # (same invariant as GET /mcp-lib and update_mcp).
+    return {**mcp.model_dump(), "auth_token": ""}
 
 
 @router.patch("/mcp-lib/{name}")
-async def toggle_mcp(name: str, body: dict, user: UserInDB = Depends(current_user)):
+async def toggle_mcp(name: str, body: dict, user: UserInDB = Depends(admin_required)):
     owner = _config_owner(user)
     mcps = _get_list(_mcp_key(owner))
     if not any(m.get("name") == name for m in mcps):
@@ -233,7 +244,7 @@ async def toggle_mcp(name: str, body: dict, user: UserInDB = Depends(current_use
 
 
 @router.put("/mcp-lib/{name}")
-async def update_mcp(name: str, body: McpDef, user: UserInDB = Depends(current_user)):
+async def update_mcp(name: str, body: McpDef, user: UserInDB = Depends(admin_required)):
     """Update an existing MCP's editable fields.
 
     ``name`` is immutable (agent bindings reference it by name), so the path
@@ -273,7 +284,7 @@ async def update_mcp(name: str, body: McpDef, user: UserInDB = Depends(current_u
 
 
 @router.delete("/mcp-lib/{name}", status_code=204)
-async def delete_mcp(name: str, user: UserInDB = Depends(current_user)):
+async def delete_mcp(name: str, user: UserInDB = Depends(admin_required)):
     owner = _config_owner(user)
     _set_list(_mcp_key(owner), [m for m in _get_list(_mcp_key(owner)) if m["name"] != name])
 
@@ -281,8 +292,13 @@ async def delete_mcp(name: str, user: UserInDB = Depends(current_user)):
 # ── Test endpoints ────────────────────────────────────────────────────────────
 
 @router.post("/mcp-lib/test")
-async def test_mcp(mcp: McpDef, user: UserInDB = Depends(current_user)):
-    """Test an unsaved MCP definition (Register dialog's Test button)."""
+async def test_mcp(mcp: McpDef, user: UserInDB = Depends(admin_required)):
+    """Test an unsaved MCP definition (Register dialog's Test button).
+
+    Admin-only: it's part of the registration flow (library is admin-curated),
+    and the probe makes the backend issue outbound HTTP to a user-supplied URL
+    (SSRF surface), so non-admins must not reach it.
+    """
     _require_stdio_admin(mcp, user)
     return await _run_mcp_test(mcp)
 
@@ -290,11 +306,18 @@ async def test_mcp(mcp: McpDef, user: UserInDB = Depends(current_user)):
 @router.post("/mcp-lib/test/{name}")
 async def test_saved_mcp(name: str, user: UserInDB = Depends(current_user)):
     """Re-test a saved MCP, loading the full definition (including server-side
-    auth_token) from Redis — the token is never included in GET /mcp-lib."""
-    mcps = _get_list(_mcp_key(_config_owner(user)))
+    auth_token) from Redis — the token is never included in GET /mcp-lib.
+
+    Reads from the admin namespace (where the library lives) and enforces the
+    caller's scope: non-admins may only test mcps in their tenant/user pool.
+    """
+    mcps = _get_list(_mcp_key("admin"))
     raw = next((m for m in mcps if m.get("name") == name), None)
     if not raw:
         raise HTTPException(404, f"MCP '{name}' not found")
+    allowed = _allowed_mcps(user)
+    if allowed is not None and name not in allowed:
+        raise HTTPException(403, f"MCP '{name}' not available to you")
     mcp = McpDef(**raw)
     _require_stdio_admin(mcp, user)
     return await _run_mcp_test(mcp)

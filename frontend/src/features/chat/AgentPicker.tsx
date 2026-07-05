@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { agentsApi, AgentRecord } from '@/api/agents'
+import { tenantsApi } from '@/api/tenants'
 import { useAuthStore } from '@/store/auth'
 import { useTranslation } from 'react-i18next'
 
@@ -11,12 +12,20 @@ interface Props {
 export default function AgentPicker({ value, onChange }: Props) {
   const role = useAuthStore(s => s.role)
   const boundAgentIds = useAuthStore(s => s.boundAgentIds)
+  const tenantId = useAuthStore(s => s.tenantId)
   const { t } = useTranslation()
   const { data: agents = [] } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list })
+  // Effective agent set in the active tenant (admin = all, tenant_admin =
+  // pool, member = per-user assigned). Legacy users fall back to boundAgentIds.
+  const { data: myResources } = useQuery({
+    queryKey: ['my-resources'], queryFn: tenantsApi.getMyResources, enabled: !!tenantId,
+  })
 
   const visible: AgentRecord[] = role === 'admin'
     ? agents
-    : agents.filter(a => boundAgentIds.includes(a.id))
+    : myResources
+      ? agents.filter(a => myResources.agents.includes(a.id))
+      : agents.filter(a => boundAgentIds.includes(a.id))
 
   return (
     <select

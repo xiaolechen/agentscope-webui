@@ -69,6 +69,8 @@ export default function SkillsPage() {
 
   const canInstall = !!command.trim() && !!effectiveTarget && !installMut.isPending
 
+  // The backend scopes the list to the caller's tenant/user pool, so no
+  // client-side filter is needed here.
   const filtered = (skills as { name: string; path: string; is_enabled: boolean }[]).filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     s.path.toLowerCase().includes(search.toLowerCase())
@@ -111,7 +113,7 @@ export default function SkillsPage() {
           <div key={s.path} className="flex items-center gap-3 p-3 rounded-[var(--as-r-md)] bg-white transition-colors cursor-pointer hover:bg-[var(--as-parchment)]"
             style={{ border: '1px solid var(--as-hairline)', opacity: s.is_enabled ? 1 : 0.55 }}
             onClick={() => setPreviewSkill(s)}>
-            <ToggleBtn path={s.path} is_enabled={s.is_enabled} />
+            <ToggleBtn path={s.path} is_enabled={s.is_enabled} isAdmin={isAdmin} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate"
                 style={{ color: s.is_enabled ? 'var(--as-ink)' : 'var(--as-ink-48)' }}>
@@ -330,7 +332,7 @@ function SkillPreviewModal({ skill, isAdmin, onClose }: {
 // mutation wiring without re-deriving the query client in the list map).
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ToggleBtn({ path, is_enabled }: { path: string; is_enabled: boolean }) {
+function ToggleBtn({ path, is_enabled, isAdmin }: { path: string; is_enabled: boolean; isAdmin: boolean }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const toggleMut = useMutation({
@@ -338,6 +340,20 @@ function ToggleBtn({ path, is_enabled }: { path: string; is_enabled: boolean }) 
       webuiApi.toggleSkill(path, is_enabled),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['skill-lib'] }),
   })
+  // The library is admin-curated; tenant members get a read-only view, so the
+  // badge is a static label for non-admins (toggling writes to a namespace the
+  // list no longer reads, so it would have no visible effect).
+  if (!isAdmin) {
+    return (
+      <span
+        className="shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium"
+        style={is_enabled
+          ? { background: 'var(--as-primary)', color: '#fff' }
+          : { background: 'var(--as-hairline)', color: 'var(--as-ink-48)' }}>
+        {is_enabled ? t('skills.badge.enabled') : t('skills.badge.disabled')}
+      </span>
+    )
+  }
   return (
     <button
       onClick={(e) => { e.stopPropagation(); toggleMut.mutate({ path, is_enabled: !is_enabled }) }}

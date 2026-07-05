@@ -136,8 +136,11 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
                         padded.replace("-", "+").replace("_", "/")
                     ))
                     user = p.get("sub", "anonymous")[:8]
-        except Exception:
-            pass
+        except Exception as e:
+            # Malformed/token-less Authorization header — not an error, just
+            # fall back to "anonymous" for the log line. Real auth is enforced
+            # by the dependency overrides, not this annotation.
+            _req_logger.debug("jwt log-annotation skipped: %s", e)
         response = await call_next(request)
         ms = (time.monotonic() - t0) * 1000
         _req_logger.info(
@@ -160,6 +163,7 @@ import session_router
 import model_router
 import knowledge_base_router
 import redis_browser_router
+import tenant_router
 import webui_helpers
 
 app.dependency_overrides[get_current_user_id] = auth_router.webui_user_id
@@ -174,6 +178,7 @@ app.include_router(session_router.router)
 app.include_router(model_router.router)
 app.include_router(knowledge_base_router.router)
 app.include_router(redis_browser_router.router)
+app.include_router(tenant_router.router)
 
 # Migrate per-admin MCP/skill config into the shared `admin` namespace so all
 # admins see one library. Idempotent — no-op on boots after the first.

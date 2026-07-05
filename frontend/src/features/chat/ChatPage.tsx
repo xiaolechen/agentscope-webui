@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiClient } from '@/api/client'
 import { sessionsApi } from '@/api/sessions'
 import { agentsApi } from '@/api/agents'
+import { tenantsApi } from '@/api/tenants'
 import { webuiApi, ChatModelConfig, SkillDef } from '@/api/webui'
 import { useAuthStore } from '@/store/auth'
 import AgentPicker from './AgentPicker'
@@ -132,9 +133,19 @@ export default function ChatPage() {
   const { t } = useTranslation()
 
   const { data: allAgents = [] } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list })
+  // The caller's effective agent set in their active tenant (admin = all,
+  // tenant_admin = tenant pool, member = per-user assigned). Legacy users with
+  // no tenant fall back to boundAgentIds.
+  const { data: myResources } = useQuery({
+    queryKey: ['my-resources'],
+    queryFn: tenantsApi.getMyResources,
+    enabled: !!useAuthStore.getState().tenantId,
+  })
   const visibleAgents = role === 'admin'
     ? allAgents
-    : allAgents.filter(a => boundAgentIds.includes(a.id))
+    : myResources
+      ? allAgents.filter(a => myResources.agents.includes(a.id))
+      : allAgents.filter(a => boundAgentIds.includes(a.id))
 
   // Skills for the chat skill-picker: ONLY this agent's bound skills, resolved
   // server-side so non-admin users (whose own skill-dirs may be empty) still see

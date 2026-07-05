@@ -6,6 +6,7 @@ import { agentsApi, AgentRecord } from '@/api/agents'
 import { credentialsApi } from '@/api/credentials'
 import { webuiApi, SecurityLevel } from '@/api/webui'
 import { useAuthStore } from '@/store/auth'
+import { useScopedResources } from '@/hooks/useScopedResources'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -501,14 +502,16 @@ export default function AgentsPage() {
   const [configAgent, setConfigAgent] = useState<AgentRecord | null>(null)
   const [page, setPage] = useState(0)
   const { data: agents = [], isLoading } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list })
+  const { allowsAgent } = useScopedResources()
   const deleteMut = useMutation({
     mutationFn: (id: string) => agentsApi.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
   })
 
   const PAGE = 10
-  const totalPages = Math.max(1, Math.ceil(agents.length / PAGE))
-  const paged = agents.slice(page * PAGE, (page + 1) * PAGE)
+  const visible = agents.filter(a => allowsAgent(a.id))
+  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE))
+  const paged = visible.slice(page * PAGE, (page + 1) * PAGE)
 
   return (
     <div className="flex flex-col h-full">

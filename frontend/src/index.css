@@ -219,6 +219,34 @@ textarea.as-input { resize: none; }
 }
 .as-nav-item.active:hover { background: var(--as-primary-hover); }
 
+/* ── Sidebar nav section header ─────────────────────────────────────────────── */
+.as-nav-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px 4px;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--as-ink-48);
+  user-select: none;
+  cursor: pointer;
+  transition: color var(--as-duration) var(--as-ease);
+}
+.as-nav-section-header:hover { color: var(--as-ink-80); }
+.as-nav-chevron {
+  transition: transform var(--as-duration) var(--as-ease);
+  flex-shrink: 0;
+}
+.as-nav-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
 /* ── Badge / pill tag ───────────────────────────────────────────────────────── */
 .as-badge {
   display: inline-flex;

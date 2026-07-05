@@ -1,6 +1,6 @@
 """Per-agent configuration — model, MCP bindings, skill bindings, preset questions, security level."""
 import logging, pathlib
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from webui_helpers import (
     ChatModelConfig,
     _config_owner, _get_json, _set_json, _get_list, _set_list,
     _skill_disabled_key, _agent_security_key,
+    _allowed_mcps, _allowed_skills, user_can_access_agent,
 )
 
 router = APIRouter(prefix="/webui", tags=["webui"])
@@ -21,17 +22,24 @@ async def require_agent_access(
     agent_id: str,
     user: UserInDB = Depends(current_user),
 ) -> UserInDB:
-    """Verify the calling user owns the agent; admins bypass this check.
+    """Verify the calling user may access the agent.
+
+    Three-layer model:
+      - admin (super-admin in agentscope) → always pass
+      - tenant_admin → agent must be in the active tenant's assigned_agents pool
+      - tenant member → agent must be in the per-user assigned resources
+      - legacy user (no tenant) → fall back to bound_agent_ids (pre-migration)
 
     agentscope uses a shared ``x-user-id: webui`` namespace, so webui's RBAC
     layer must enforce agent ownership here. Without this check any authenticated
-    user could read or overwrite another user's agent model/MCP/skill config
-    (horizontal privilege escalation).
+    user could read or overwrite another user's agent config (horizontal
+    privilege escalation).
     """
     if user.role == "admin":
         return user
-    if agent_id not in user.bound_agent_ids:
-        logger.warning("priv-esc attempt: user=%s agent=%s", user.id, agent_id)
+    if not user_can_access_agent(user, agent_id):
+        logger.warning("priv-esc attempt: user=%s agent=%s tenant=%s",
+                       user.id, agent_id, user.tenant_id or "-")
         raise HTTPException(403, f"No access to agent '{agent_id}'")
     return user
 
@@ -60,6 +68,11 @@ async def delete_agent_model(agent_id: str, _: UserInDB = Depends(require_agent_
 
 # ── Per-agent MCP & skill bindings ────────────────────────────────────────────
 
+# _allowed_mcps / _allowed_skills live in webui_helpers (shared with the
+# mcp/skill list endpoints that scope non-admin views to the tenant pool).
+
+
+
 @router.get("/agent-mcps/{agent_id}")
 async def get_agent_mcps(agent_id: str, _: UserInDB = Depends(require_agent_access)):
     return _get_list(f"webui:config:agent-mcps:{agent_id}")
@@ -69,8 +82,13 @@ async def get_agent_mcps(agent_id: str, _: UserInDB = Depends(require_agent_acce
 async def set_agent_mcps(
     agent_id: str,
     body: list = Body(...),
-    _: UserInDB = Depends(require_agent_access),
+    user: UserInDB = Depends(require_agent_access),
 ):
+    allowed = _allowed_mcps(user)
+    if allowed is not None:
+        excess = [m for m in body if m not in allowed]
+        if excess:
+            raise HTTPException(400, f"MCPs not available to you: {excess}")
     _set_list(f"webui:config:agent-mcps:{agent_id}", body)
     return body
 
@@ -84,8 +102,13 @@ async def get_agent_skills(agent_id: str, _: UserInDB = Depends(require_agent_ac
 async def set_agent_skills(
     agent_id: str,
     body: list = Body(...),
-    _: UserInDB = Depends(require_agent_access),
+    user: UserInDB = Depends(require_agent_access),
 ):
+    allowed = _allowed_skills(user)
+    if allowed is not None:
+        excess = [s for s in body if s not in allowed]
+        if excess:
+            raise HTTPException(400, f"Skills not available to you: {excess}")
     _set_list(f"webui:config:agent-skills:{agent_id}", body)
     return body
 

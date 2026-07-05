@@ -179,6 +179,8 @@ export default function McpPage() {
   const labelCls = "text-xs font-medium mb-1 block"
   const labelStyle = { color: 'var(--as-ink-80)' }
 
+  // The backend scopes the list to the caller's tenant/user pool, so no
+  // client-side filter is needed here.
   const list = mcps as McpDef[]
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE))
   const paged = list.slice(page * PAGE, (page + 1) * PAGE)
@@ -189,7 +191,9 @@ export default function McpPage() {
     <div className="flex flex-col h-full">
       <div className="px-6 border-b flex items-center shrink-0" style={{ borderColor: 'var(--as-hairline)', height: 'var(--as-bar-h)', background: 'var(--as-parchment)' }}>
         <h2 className="text-lg font-semibold tracking-tight flex-1" style={{ color: 'var(--as-ink)' }}>{t('mcp.title')}</h2>
-        <button onClick={openRegister} className="as-btn as-btn-primary as-btn-sm">{t('mcp.button.register')}</button>
+        {/* The library is admin-curated; tenant members get a read-only view of
+            their assigned pool (scoped server-side), so only admins may register. */}
+        {isAdmin && <button onClick={openRegister} className="as-btn as-btn-primary as-btn-sm">{t('mcp.button.register')}</button>}
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-2">
         {isLoading && <p className="text-sm" style={{ color: 'var(--as-ink-48)' }}>{t('common.status.loading')}</p>}
@@ -197,6 +201,7 @@ export default function McpPage() {
           <McpCard
             key={m.name}
             mcp={m}
+            isAdmin={isAdmin}
             isExpanded={expanded === m.name}
             onToggleExpand={() => setExpanded(expanded === m.name ? null : m.name)}
             onToggleEnabled={(is_enabled) => toggleMut.mutate({ name: m.name, is_enabled })}
@@ -354,6 +359,7 @@ export default function McpPage() {
 
 interface McpCardProps {
   mcp: McpDef
+  isAdmin: boolean
   isExpanded: boolean
   onToggleExpand: () => void
   onToggleEnabled: (is_enabled: boolean) => void
@@ -361,7 +367,7 @@ interface McpCardProps {
   onDelete: () => void
 }
 
-function McpCard({ mcp, isExpanded, onToggleExpand, onToggleEnabled, onEdit, onDelete }: McpCardProps) {
+function McpCard({ mcp, isAdmin, isExpanded, onToggleExpand, onToggleEnabled, onEdit, onDelete }: McpCardProps) {
   const { t } = useTranslation()
   // Re-test via the name-based endpoint: GET /mcp-lib strips auth_token, so the
   // server resolves the saved def (with secret) itself — the browser never
@@ -379,14 +385,24 @@ function McpCard({ mcp, isExpanded, onToggleExpand, onToggleEnabled, onEdit, onD
   return (
     <div className="as-card as-card-hover overflow-hidden">
       <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={onToggleExpand}>
-        <button
-          onClick={e => { e.stopPropagation(); onToggleEnabled(!mcp.is_enabled) }}
-          className="shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors"
-          style={mcp.is_enabled
-            ? { background: 'var(--as-primary)', color: '#fff' }
-            : { background: 'var(--as-hairline)', color: 'var(--as-ink-48)' }}>
-          {mcp.is_enabled ? t('mcp.badge.enabled') : t('mcp.badge.disabled')}
-        </button>
+        {isAdmin ? (
+          <button
+            onClick={e => { e.stopPropagation(); onToggleEnabled(!mcp.is_enabled) }}
+            className="shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors"
+            style={mcp.is_enabled
+              ? { background: 'var(--as-primary)', color: '#fff' }
+              : { background: 'var(--as-hairline)', color: 'var(--as-ink-48)' }}>
+            {mcp.is_enabled ? t('mcp.badge.enabled') : t('mcp.badge.disabled')}
+          </button>
+        ) : (
+          <span
+            className="shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium"
+            style={mcp.is_enabled
+              ? { background: 'var(--as-primary)', color: '#fff' }
+              : { background: 'var(--as-hairline)', color: 'var(--as-ink-48)' }}>
+            {mcp.is_enabled ? t('mcp.badge.enabled') : t('mcp.badge.disabled')}
+          </span>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-medium" style={{ color: 'var(--as-ink)' }}>{mcp.name}</p>
@@ -405,10 +421,14 @@ function McpCard({ mcp, isExpanded, onToggleExpand, onToggleEnabled, onEdit, onD
             transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
             transition: 'transform 200ms',
           }} />
-        <button onClick={e => { e.stopPropagation(); onEdit() }} className="as-btn as-btn-ghost as-btn-sm" style={{ padding: '4px' }} title={t('mcp.button.edit')}>
-          <Pencil size={13} />
-        </button>
-        <button onClick={e => { e.stopPropagation(); onDelete() }} className="as-btn as-btn-danger"><Trash2 size={13} /></button>
+        {isAdmin && (
+          <>
+            <button onClick={e => { e.stopPropagation(); onEdit() }} className="as-btn as-btn-ghost as-btn-sm" style={{ padding: '4px' }} title={t('mcp.button.edit')}>
+              <Pencil size={13} />
+            </button>
+            <button onClick={e => { e.stopPropagation(); onDelete() }} className="as-btn as-btn-danger"><Trash2 size={13} /></button>
+          </>
+        )}
       </div>
 
       {isExpanded && (

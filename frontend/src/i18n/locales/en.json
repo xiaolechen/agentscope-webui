@@ -3,6 +3,11 @@
     "name": "AgentScope"
   },
   "nav": {
+    "groups": {
+      "workspace": "Workspace",
+      "configuration": "Configuration",
+      "system": "System"
+    },
     "chat": "Chat",
     "sessions": "Sessions",
     "knowledge": "Knowledge",
@@ -14,7 +19,8 @@
     "logs": "Logs",
     "settings": "Settings",
     "users": "Users",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "switchTenant": "Switch tenant"
   },
   "login": {
     "subtitle": "Sign in to continue",
@@ -492,8 +498,14 @@
   },
   "users": {
     "title": "Users",
+    "tab": {
+      "users": "Users",
+      "tenants": "Tenants",
+      "tenant": "My Tenant"
+    },
     "button": {
-      "new": "+ New User"
+      "new": "+ New User",
+      "resources": "Resources"
     },
     "card": {
       "agents": "Agents: "
@@ -513,9 +525,71 @@
       "passwordPlaceholder": "Password",
       "passwordPlaceholderEdit": "New password (blank = keep)",
       "roleUser": "User",
+      "roleTenantAdmin": "Tenant Admin",
       "roleAdmin": "Admin",
+      "tenant": "Tenant",
+      "noTenant": "None (no tenant)",
+      "tenantAdminRequiresTenant": "A tenant admin must belong to a tenant",
+      "tenantScopedHint": "You can only manage members within your tenant \"{{name}}\".",
       "boundAgents": "Bound Agents",
-      "emptyAgents": "No agents yet."
+      "emptyAgents": "No agents yet.",
+      "resourcesSection": "Resource Assignment",
+      "resourcesHint": "Assign at least one agent this user can access",
+      "resourcesOnlyForUser": "Only regular users need resource assignment",
+      "resourcesLockedHint": "Resources are assigned later by the tenant admin"
+    }
+  },
+  "tenants": {
+    "title": "Tenants",
+    "button": {
+      "new": "+ New Tenant"
+    },
+    "card": {
+      "members": "{{count}} members",
+      "menus": "{{count}} menus"
+    },
+    "confirm": {
+      "delete": "Delete tenant {{name}}? Members will be detached.",
+      "removeMember": "Remove {{name}} from this tenant?"
+    },
+    "empty": {
+      "noTenants": "No tenants. Create one to assign menu permissions and resources."
+    },
+    "dialog": {
+      "new": "New Tenant"
+    },
+    "resources": {
+      "title": "Resources for {{name}}"
+    },
+    "form": {
+      "name": "Name",
+      "namePlaceholder": "acme-corp",
+      "nameHint": "Letters, digits, underscores, hyphens only. Immutable after creation.",
+      "displayName": "Display Name",
+      "displayNamePlaceholder": "Acme Corp"
+    },
+    "detail": {
+      "tab": {
+        "perms": "Menu Permissions",
+        "resources": "Resources",
+        "members": "Members"
+      },
+      "resources": {
+        "agents": "Agents",
+        "mcps": "MCP Servers",
+        "skills": "Skills",
+        "credentials": "Credentials",
+        "emptyAgents": "No agents.",
+        "emptyMcps": "No MCP servers registered.",
+        "emptySkills": "No skills.",
+        "emptyCredentials": "No credentials."
+      },
+      "member": {
+        "roleUser": "Member",
+        "roleTenantAdmin": "Tenant Admin",
+        "selectUser": "Select user…",
+        "empty": "This tenant has no members yet."
+      }
     }
   },
   "redis": {

@@ -19,6 +19,8 @@ export default function LoginPage() {
   const { t } = useTranslation()
   const setAuth = useAuthStore(s => s.setAuth)
   const setBoundAgents = useAuthStore(s => s.setBoundAgents)
+  const setTenant = useAuthStore(s => s.setTenant)
+  const setMemberships = useAuthStore(s => s.setMemberships)
   const [error, setError] = useState('')
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Fields>({
@@ -32,6 +34,8 @@ export default function LoginPage() {
       setAuth({ token: res.access_token, role: res.role, userId: res.user_id, username })
       const me = await authApi.me()
       setBoundAgents(me.bound_agent_ids)
+      setTenant(me.active_tenant_id ?? me.tenant_id, me.menu_permissions as any)
+      setMemberships(me.memberships)
       navigate('/chat')
     } catch {
       setError(t('login.error.invalidCredentials'))

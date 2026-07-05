@@ -3,6 +3,11 @@
     "name": "AgentScope"
   },
   "nav": {
+    "groups": {
+      "workspace": "工作区",
+      "configuration": "配置",
+      "system": "系统"
+    },
     "chat": "对话",
     "sessions": "会话",
     "knowledge": "知识库",
@@ -14,7 +19,8 @@
     "logs": "日志",
     "settings": "设置",
     "users": "用户",
-    "signOut": "退出登录"
+    "signOut": "退出登录",
+    "switchTenant": "切换租户"
   },
   "login": {
     "subtitle": "登录以继续",
@@ -492,8 +498,14 @@
   },
   "users": {
     "title": "用户",
+    "tab": {
+      "users": "用户",
+      "tenants": "租户",
+      "tenant": "我的租户"
+    },
     "button": {
-      "new": "+ 新建用户"
+      "new": "+ 新建用户",
+      "resources": "资源配置"
     },
     "card": {
       "agents": "Agent："
@@ -513,9 +525,71 @@
       "passwordPlaceholder": "密码",
       "passwordPlaceholderEdit": "新密码（留空则不变）",
       "roleUser": "用户",
+      "roleTenantAdmin": "租户管理员",
       "roleAdmin": "管理员",
+      "tenant": "所属租户",
+      "noTenant": "无（不归属任何租户）",
+      "tenantAdminRequiresTenant": "租户管理员必须归属某个租户",
+      "tenantScopedHint": "仅可在租户「{{name}}」内管理成员。",
       "boundAgents": "绑定的 Agent",
-      "emptyAgents": "尚无 Agent。"
+      "emptyAgents": "尚无 Agent。",
+      "resourcesSection": "资源分配",
+      "resourcesHint": "至少分配一个该用户可访问的 Agent",
+      "resourcesOnlyForUser": "仅普通用户需要分配资源",
+      "resourcesLockedHint": "资源由租户管理员后续分配"
+    }
+  },
+  "tenants": {
+    "title": "租户",
+    "button": {
+      "new": "+ 新建租户"
+    },
+    "card": {
+      "members": "{{count}} 成员",
+      "menus": "{{count}} 项菜单"
+    },
+    "confirm": {
+      "delete": "确定删除租户 {{name}} 吗？成员将被移出租户。",
+      "removeMember": "确定将 {{name}} 移出租户吗？"
+    },
+    "empty": {
+      "noTenants": "尚无租户。创建一个以分配菜单权限与资源。"
+    },
+    "dialog": {
+      "new": "新建租户"
+    },
+    "resources": {
+      "title": "{{name}} 的资源分配"
+    },
+    "form": {
+      "name": "名称",
+      "namePlaceholder": "acme-corp",
+      "nameHint": "仅限字母、数字、下划线、连字符，创建后不可更改",
+      "displayName": "显示名称",
+      "displayNamePlaceholder": "Acme 公司"
+    },
+    "detail": {
+      "tab": {
+        "perms": "菜单权限",
+        "resources": "资源",
+        "members": "成员"
+      },
+      "resources": {
+        "agents": "Agent",
+        "mcps": "MCP Servers",
+        "skills": "Skills",
+        "credentials": "凭证",
+        "emptyAgents": "尚无 Agent。",
+        "emptyMcps": "尚未注册 MCP Server。",
+        "emptySkills": "尚无 Skill。",
+        "emptyCredentials": "尚无凭证。"
+      },
+      "member": {
+        "roleUser": "成员",
+        "roleTenantAdmin": "租户管理员",
+        "selectUser": "选择用户…",
+        "empty": "该租户尚无成员。"
+      }
     }
   },
   "redis": {

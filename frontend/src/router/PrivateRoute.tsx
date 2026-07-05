@@ -1,5 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom'
-import { useAuthStore } from '@/store/auth'
+import { useAuthStore, type MenuPermission } from '@/store/auth'
 
 /** Decode JWT `exp` claim client-side (no signature check) to detect expiry. */
 function isTokenExpired(token: string): boolean {
@@ -13,12 +13,16 @@ function isTokenExpired(token: string): boolean {
 }
 
 interface Props {
+  /** Legacy: restrict to super-admin only (system-level routes). */
   adminOnly?: boolean
+  /** New: require a menu permission (tenant-scoped). Admin always passes. */
+  requiredPermission?: MenuPermission
 }
 
-export default function PrivateRoute({ adminOnly = false }: Props) {
+export default function PrivateRoute({ adminOnly = false, requiredPermission }: Props) {
   const token = useAuthStore(s => s.token)
   const role = useAuthStore(s => s.role)
+  const hasMenu = useAuthStore(s => s.hasMenu)
   const logout = useAuthStore(s => s.logout)
 
   if (!token || isTokenExpired(token)) {
@@ -26,6 +30,11 @@ export default function PrivateRoute({ adminOnly = false }: Props) {
     if (token) logout()
     return <Navigate to="/login" replace />
   }
+  // Super-admin-only routes (e.g. tenant management, logs, settings, users).
   if (adminOnly && role !== 'admin') return <Navigate to="/chat" replace />
+  // Permission-gated routes: admin passes; tenant members need the perm.
+  if (requiredPermission && !hasMenu(requiredPermission)) {
+    return <Navigate to="/chat" replace />
+  }
   return <Outlet />
 }
