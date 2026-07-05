@@ -9,17 +9,20 @@
 ```
 agentscope-webui/
 ├── backend/                          # Python 后端（FastAPI，监听 :8000）
-│   ├── main.py                       # 应用入口，注册全部路由 + 启动迁移
-│   ├── auth_router.py                # /auth/*  JWT 认证 + get_current_user_id 依赖覆盖
-│   ├── users_router.py               # /users/* 用户管理（Admin only）
-│   ├── mcp_router.py                 # /webui/mcp-lib/* MCP 库
-│   ├── skill_router.py               # /webui/skill-lib/*、/webui/skill-dirs Skill 库
-│   ├── session_router.py             # /webui/session-* Session 归属 + workspace 注入
-│   ├── schedule_router.py            # /webui/schedule Schedule 代理
-│   ├── agent_config_router.py        # /webui/agent-* Agent 级配置
+│   ├── main.py                       # 应用入口，注册全部路由 + JWT 依赖覆盖 + 启动迁移
+│   ├── auth_router.py                # /auth/*  JWT 认证 + 依赖覆盖 + /auth/me + /auth/switch-tenant + login 回填 legacy membership
+│   ├── permission_guard.py           # 权限守卫：require_platform_access、require_feature
+│   ├── tenant_router.py              # /webui/tenants/* 租户 CRUD / 成员 / per-user 资源
+│   ├── users_router.py               # /users/* 用户管理（数据 scope）
+│   ├── mcp_router.py                 # /webui/mcp-lib/* MCP 库（admin 命名空间 + scope；写 admin-only）
+│   ├── skill_router.py               # /webui/skill-lib/*、/webui/skill-dirs Skill 库（写 admin-only）
+│   ├── session_router.py             # /webui/session-* Session 归属（creator-owned）+ workspace 注入
+│   ├── schedule_router.py            # /webui/schedule + /webui/my-schedule-ids Schedule（creator-owned）
+│   ├── agent_config_router.py        # /webui/agent-* Agent 级配置（require_agent_access 三层）
 │   ├── model_router.py               # /webui/me/default-model、/webui/agent-model/* 模型配置
+│   ├── knowledge_base_router.py      # /webui/knowledge-base/* KB（owner-scoped）
 │   ├── redis_browser_router.py       # /webui/redis/* Redis 数据浏览器（Admin 只读）
-│   └── webui_helpers.py              # 共享工具（Redis key helpers、PRODUCTION_MODE 常量）
+│   └── webui_helpers.py              # 共享工具（Redis key helpers、_config_owner、resolve_menu_permissions、scope helpers、PRODUCTION_MODE）
 │
 └── frontend/                         # React 前端（Vite，监听 :5173）
     └── src/
@@ -62,6 +65,24 @@ curl -X POST http://localhost:8000/auth/login \
 ```
 
 后续所有请求带 `Authorization: Bearer <access_token>`。
+
+### 角色与租户
+
+三层 RBAC：
+
+| 角色 | 归属 | 能力 |
+|---|---|---|
+| `admin` | 平台租户 `agentscope` | 全权；创建/配置所有租户、看全部数据 |
+| `tenant_admin` | 普通租户 | 管理本租户成员、给 `user` 分配 agent；看本租户成员的运行时数据 |
+| `user` | 普通租户 | 看被分配的 agent 子集 + 自己的运行时数据；看不到 Configuration 菜单 |
+
+一个用户可属多个租户（每租户一个角色），存 `webui:user:memberships:{user_id}`。`/auth/me` 返回 `memberships` + `active_tenant_id` + `menu_permissions`。切换活跃租户：
+
+```
+POST /auth/switch-tenant?target_tenant_id={tenant_id}   # 返新 JWT（携带新 active tenant + 该租户 role）
+```
+
+**两种归属模型**：配置资源（agents/skills/mcps/credentials）按租户池 + 个人子集；运行时数据（session/schedule/knowledge）按创建者归属。详见 `docs/architecture/multi-tenant-permission.md`。
 
 ---
 
@@ -226,32 +247,45 @@ GET/PUT /webui/agent-questions/{agent_id}     # Agent 预设问题（string[]，
 GET  /webui/agent-security/{agent_id}        # Agent 安全等级（{level: strict|workspace|standard|open}，默认 workspace）
 PUT  /webui/agent-security/{agent_id}        # 设置安全等级（admin only；maps 到 agentscope PermissionMode）
 
-# MCP 库（按 owner：admin 共享 "admin" / 非 admin 按 user.id）
-GET  /webui/mcp-lib                  # 列表（auth_token 被剥离）
-POST /webui/mcp-lib                  # 注册（stdio 仅 admin）
-PUT  /webui/mcp-lib/{name}           # 编辑（name 不可变；auth_token 留空则保留原值）
-PATCH /webui/mcp-lib/{name}          # 启停（body: {is_enabled}）
-DELETE /webui/mcp-lib/{name}
-POST /webui/mcp-lib/test             # 临时测试（body: McpDef，含表单 token）
-POST /webui/mcp-lib/test/{name}      # 按名重测（加载服务端已存 token）
+# MCP 库（admin 命名空间；写操作 admin-only；非 admin 按 scope 只读）
+GET  /webui/mcp-lib                  # 列表（auth_token 被剥离；非 admin 仅看自己池内）
+POST /webui/mcp-lib                  # 注册（admin only；stdio 仅 admin，PRODUCTION_MODE 禁 stdio）
+PUT  /webui/mcp-lib/{name}           # 编辑（admin；name 不可变；auth_token 留空则保留原值）
+PATCH /webui/mcp-lib/{name}          # 启停（admin only；body: {is_enabled}）
+DELETE /webui/mcp-lib/{name}         # 删除（admin only）
+POST /webui/mcp-lib/test             # 临时测试（admin only，body: McpDef，含表单 token）
+POST /webui/mcp-lib/test/{name}      # 按名重测（admin/member 可测自己池内；加载服务端已存 token）
 
-# Skill 库（skill-dirs/skill-disabled 按 owner 共享）
-GET/POST/DELETE /webui/skill-dirs    # Skill 根目录（每子目录含 SKILL.md 即一个 skill）
-GET  /webui/skill-lib                # 扫描结果（{name,path,is_enabled}）
-POST /webui/skill-lib/toggle         # 启停 skill（body: {path,is_enabled}）
+# Skill 库（admin 命名空间；写操作 admin-only；非 admin 按 scope 只读）
+GET/POST/DELETE /webui/skill-dirs    # Skill 根目录（POST/DELETE admin only；每子目录含 SKILL.md 即一个 skill）
+GET  /webui/skill-lib                # 扫描结果（{name,path,is_enabled}；非 admin 仅看自己池内）
+POST /webui/skill-lib/toggle         # 启停 skill（admin only；body: {path,is_enabled}）
 POST /webui/skill-lib/install        # npx skills add 安装（admin only，target_dir 须是已注册 skill-dir）
+
+# 租户管理（tenant_router.py）
+GET    /webui/tenants                       # 租户列表（仅 agentscope 平台成员）
+POST   /webui/tenants                       # 创建租户（平台成员）
+GET/PUT/DELETE /webui/tenants/{id}          # 租户详情/编辑（menu_permissions + assigned_* 池）/删除
+GET    /webui/tenants/my-tenant             # 自己的租户（任意成员可读）
+GET    /webui/tenants/my-resources          # 当前有效资源集（admin/tenant_admin=租户池；member=个人子集）
+GET    /webui/tenants/{id}/members          # 成员列表
+POST   /webui/tenants/{id}/members          # 添加成员（body: {user_ids, role}）
+DELETE /webui/tenants/{id}/members/{uid}    # 移除成员
+PUT    /webui/tenants/{id}/members/{uid}    # 改成员角色
+GET/PUT /webui/tenants/{id}/members/{uid}/resources  # per-user 资源子集（须 ⊆ 租户池）
 
 # Session 注入（内部透传 JWT 调 agentscope /workspace/*）
 POST /webui/session-workspace        # 注入 agent 的 MCP+Skill 到 session workspace（幂等）
 POST /webui/session-skill            # 单 skill 注入活跃 session（body: {agent_id,session_id,skill_path}）
 
-# Session 归属
-POST /webui/session-track            # 记录归属（body: {session_id, agent_id}）
-GET  /webui/my-session-ids/{agent_id}  # 当前用户在该 agent 下的 session ID 列表
+# Session 归属（creator-owned）
+POST /webui/session-track            # 记录归属（body: {session_id, agent_id}；user_can_access_agent 校验）
+GET  /webui/my-session-ids/{agent_id}  # 可见 session ID（admin=all / tenant_admin=租户并集 / member=自己）
 
-# Schedule
-POST /webui/schedule                 # 创建定时任务（自动注入 agent 的 model config）
-POST /webui/schedule/{schedule_id}/run  # 立即运行
+# Schedule（creator-owned）
+POST /webui/schedule                 # 创建定时任务（自动注入 agent 的 model config + 记录 creator 归属）
+GET  /webui/my-schedule-ids          # 可见 schedule ID（同 session scope 规则）
+POST /webui/schedule/{schedule_id}/run  # 立即运行（_schedule_visible_to 校验）
 
 # 运维（Admin only）
 POST /webui/restart                  # 重启后端
@@ -277,9 +311,9 @@ GET  /webui/redis/key                # 单 key 数据（分页）
 ```
 
 - `name` 必须匹配 `[a-zA-Z0-9_-]+`（嵌入 LLM 工具名 `mcp__{name}__{tool}`，非 ASCII 不允许）
-- `auth_token` 是服务端密钥：`GET /webui/mcp-lib` 响应里被剥离；编辑时留空保留原值；重测走 `/mcp-lib/test/{name}`
+- `auth_token` 是服务端密钥：`GET /webui/mcp-lib`、`POST`、`PUT` 响应里被剥离；编辑时留空保留原值；重测走 `/mcp-lib/test/{name}`
 - `auth_type`：`none`/`bearer`/`oauth` → `Authorization: Bearer <token>`；`api_key` → `<auth_header_name|X-API-Key>: <token>`
-- stdio 注册/测试仅 admin（在 backend 主机执行命令）；远程传输全员可用
+- **库管理 admin-only（v2.3）**：注册/编辑/启停/删除/未保存测试均 `admin_required`；非 admin 只读看自己 scope 内的池。stdio 在后端主机执行命令仅 admin（PRODUCTION_MODE 下完全禁止 stdio 注入）
 
 ---
 
@@ -307,8 +341,10 @@ GET  /webui/redis/key                # 单 key 数据（分页）
 | 422 on /chat/ | `input` 格式错误（发了字符串而不是 Msg 对象） | 使用 Msg 格式，见上 |
 | 422 on /sessions/.../stream | JWT 缺失或无效 | 加 `Authorization: Bearer <token>` |
 | 409 on /chat/ | Session 正在处理中 | 等待当前 reply 结束再发 |
-| 403 on /webui/agent-* | 非 admin 访问未绑定给自己的 agent | 让 admin 把 agent 绑定给该用户 |
+| 403 on /webui/agent-* | 非 admin 访问未分配给自己的 agent | admin/tenant_admin 把 agent 分配给该用户（`PUT /webui/tenants/{id}/members/{uid}/resources`） |
+| 403 on MCP/Skill 库写 | 库管理 admin-only（v2.3） | 用 admin 账号；非 admin 只读 |
 | 403 on stdio MCP 注册/测试 | stdio 在后端主机执行命令，仅 admin | 改用 sse / streamable-http 远程传输 |
+| 403 on /webui/tenants/* | 非 agentscope 平台成员 | 仅平台租户成员可创建/配置租户 |
 | Stream 为空（只有 `:`） | Session 没有 `chat_model_config` | PATCH session 写入模型配置 |
 | Stream 为空（没有 TEXT_BLOCK_DELTA） | model config 的 credential_id 无效，或 agent 绑定的 MCP/Skill 未注入 | 检查凭据有效；调 `POST /webui/session-workspace` 注入 |
 | MCP "Not authenticated" | 旧 MCP 条目无 auth 字段（迁移自旧版） | PUT `/webui/mcp-lib/{name}` 补 auth_type + auth_token |
@@ -324,3 +360,4 @@ GET  /webui/redis/key                # 单 key 数据（分页）
 - **Redis key 字符串**：所有 Redis key 通过 `webui_helpers.py` 的 `_xxx_key()` 函数生成；新 key 模式须先在 `webui_helpers.py` 添加 helper 函数
 - **内部 httpx 调用必须透传 JWT**：所有调用 agentscope 原生端点（`/workspace/*`、`/sessions/*` 等）的 httpx 请求，必须用 `_forward_auth_headers(request)` 构造 headers，否则返 401
 - **PRODUCTION_MODE**：`PRODUCTION_MODE=true` 时，`session_router.py` 会过滤 stdio MCP 注入并设置受限 PermissionMode；新增的 MCP/Session 相关逻辑需遵守此开关
+- **多租户权限**：三层 RBAC（admin/tenant_admin/user），详见 `docs/architecture/multi-tenant-permission.md`。新增端点须用 `Depends(current_user)` + 适当守卫（`require_feature`/`require_platform_access`/`_assert_can_manage_tenant`）；资源 scope 复用 `_allowed_mcps`/`_allowed_skills`/`user_can_access_agent`，勿另查陈旧的 `bound_agent_ids`
