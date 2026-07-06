@@ -197,6 +197,10 @@ export const webuiApi = {
     permission_mode?: string
   }) => apiClient.post('/webui/schedule', body).then(r => r.data),
 
+  // Schedule ownership scope (admin=all, others=own only)
+  getMyScheduleIds: (): Promise<{ all?: boolean; schedule_ids?: string[] }> =>
+    apiClient.get('/webui/my-schedule-ids').then(r => r.data),
+
   // Backend restart (Admin only)
   restart: () =>
     apiClient.post('/webui/restart').then(r => r.data),

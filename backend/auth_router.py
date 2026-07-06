@@ -298,7 +298,30 @@ async def switch_tenant(target_tenant_id: str, user: UserInDB = Depends(current_
     """Switch the caller's active tenant. Returns a fresh JWT carrying the new
     active tenant + the role the user holds *in that tenant*. The user must be
     a member of the target tenant."""
-    from webui_helpers import get_user_member_role
+    from webui_helpers import get_user_member_role, get_tenant, PLATFORM_TENANT_ID
+    # Detect platform admin via membership, not user.role — once an admin
+    # switches into a regular tenant their active role becomes tenant_admin,
+    # but they must still be able to switch back out and to other tenants.
+    platform_role = get_user_member_role(user.id, PLATFORM_TENANT_ID)
+    if platform_role == "admin":
+        if not get_tenant(target_tenant_id):
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        # In the platform tenant the admin keeps full admin role; in any
+        # regular tenant they take on tenant_admin so they can verify that
+        # tenant's menu permissions and resource assignments as its admin
+        # would experience them.
+        effective_role = "admin" if target_tenant_id == PLATFORM_TENANT_ID else "tenant_admin"
+        updated = user.model_copy(update={"tenant_id": target_tenant_id, "role": effective_role})
+        save_user(updated)
+        token = create_token({
+            "sub": user.id,
+            "role": effective_role,
+            "tenant_id": target_tenant_id,
+        })
+        logger.info("tenant switch (admin): user=%s -> tenant=%s role=%s",
+                    user.username, target_tenant_id, effective_role)
+        return Token(access_token=token, token_type="bearer", role=effective_role, user_id=user.id)
+    # Non-admin: must be a member of the target tenant.
     role = get_user_member_role(user.id, target_tenant_id)
     if not role:
         raise HTTPException(status_code=403, detail="You are not a member of this tenant")

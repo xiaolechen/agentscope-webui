@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { agentsApi, AgentRecord } from '@/api/agents'
 import { sessionsApi, SessionRecord } from '@/api/sessions'
-import { useAuthStore } from '@/store/auth'
 import { useNavigate } from 'react-router-dom'
 import { webuiApi } from '@/api/webui'
+import { useScopedResources } from '@/hooks/useScopedResources'
 import { Pencil, Trash2, RefreshCw, Play } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -18,8 +18,7 @@ export interface ResumeTarget {
 // Simple module-level store for resume intent
 
 export default function SessionsPage() {
-  const role = useAuthStore(s => s.role)
-  const boundAgentIds = useAuthStore(s => s.boundAgentIds)
+  const { allowsAgent, scopeLoaded } = useScopedResources()
   const navigate = useNavigate()
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -30,9 +29,10 @@ export default function SessionsPage() {
   const [renameText, setRenameText] = useState('')
 
   const { data: agents = [] } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list })
-  const relevantAgents: AgentRecord[] = role === 'admin'
-    ? agents
-    : agents.filter(a => boundAgentIds.includes(a.id))
+  // Filter by the effective resource scope (per-user subset for members,
+  // tenant pool for tenant_admin, all for admin). bound_agent_ids is a stale
+  // legacy field and must not be used for visibility.
+  const relevantAgents: AgentRecord[] = agents.filter(a => allowsAgent(a.id))
 
   const { data: sessions = [], isLoading, refetch } = useQuery({
     queryKey: ['sessions-all', relevantAgents.map(a => a.id).join(',')],
@@ -49,7 +49,10 @@ export default function SessionsPage() {
       }
       return all.sort((a, b) => (b.updated_at ?? '') > (a.updated_at ?? '') ? 1 : -1)
     },
-    enabled: relevantAgents.length > 0,
+    // Wait for the resource scope to load before fetching — otherwise the
+    // pre-resolution `allowsAgent` returns true for everything and we'd flash
+    // sessions the user can't actually access.
+    enabled: scopeLoaded && relevantAgents.length > 0,
   })
 
   const deleteMut = useMutation({

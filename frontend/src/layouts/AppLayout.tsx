@@ -1,7 +1,10 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore, type MenuPermission } from '@/store/auth'
+import { queryClient } from '@/main'
+import { tenantsApi } from '@/api/tenants'
 import LangSwitcher from '@/components/LangSwitcher'
 import {
   MessageSquare, Clock, Bot, Wand2, Network, Key,
@@ -126,7 +129,7 @@ export default function AppLayout() {
         <div className="px-3 border-t flex items-center gap-2 shrink-0" style={{ borderColor: 'var(--as-hairline)', height: 'var(--as-footer-bar-h)' }}>
           <TenantSwitcher />
           <button
-            onClick={() => { logout(); navigate('/login') }}
+            onClick={() => { logout(); queryClient.clear(); navigate('/login') }}
             className="as-btn as-btn-ghost"
             title={t('nav.signOut')}
             style={{ padding: '5px' }}
@@ -157,13 +160,35 @@ function TenantSwitcher() {
   const switchTenant = useAuthStore(s => s.switchTenant)
   const [open, setOpen] = useState(false)
 
-  // Only render the switcher when there's more than one membership. A single
-  // tenant (or none) just shows the username, matching the old layout.
-  if (memberships.length <= 1) {
+  // Detect platform admin via membership so the switcher keeps showing every
+  // tenant even after the admin has dropped into a regular tenant (where
+  // their active role becomes tenant_admin). Using `role` alone would hide
+  // the list once they switch away from the platform tenant.
+  const isPlatformAdmin = memberships.some(m => m.tenant_id === 'agentscope' && m.role === 'admin')
+
+  const { data: allTenants = [] } = useQuery({
+    queryKey: ['tenants-for-switcher'],
+    queryFn: tenantsApi.list,
+    enabled: isPlatformAdmin,
+  })
+
+  const switchableList = useMemo(() => {
+    if (!isPlatformAdmin) return memberships
+    // Platform tenant shows admin; regular tenants show tenant_admin — the
+    // role the admin will hold after switching there.
+    return allTenants.map(t => ({
+      tenant_id: t.id,
+      role: (t.id === 'agentscope' ? 'admin' : 'tenant_admin') as const,
+      display_name: t.display_name,
+    }))
+  }, [isPlatformAdmin, memberships, allTenants])
+
+  // Only render the switcher when there's more than one switchable tenant.
+  if (switchableList.length <= 1) {
     return <span className="flex-1 as-caption truncate" style={{ color: 'var(--as-ink-80)' }}>{username}</span>
   }
 
-  const active = memberships.find(m => m.tenant_id === tenantId) ?? memberships[0]
+  const active = switchableList.find(m => m.tenant_id === tenantId) ?? switchableList[0]
   const onPick = async (tid: string) => {
     setOpen(false)
     if (tid === active.tenant_id) return
@@ -198,7 +223,7 @@ function TenantSwitcher() {
             className="absolute bottom-full left-0 mb-1 z-50 rounded-[var(--as-r-sm)] py-1 shadow-lg"
             style={{ background: 'var(--as-canvas)', border: '1px solid var(--as-hairline)', minWidth: 160 }}
           >
-            {memberships.map(m => (
+            {switchableList.map(m => (
               <button
                 key={m.tenant_id}
                 type="button"

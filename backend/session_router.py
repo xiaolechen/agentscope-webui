@@ -80,26 +80,15 @@ async def my_session_ids(agent_id: str, user: UserInDB = Depends(current_user)):
 
     Data-scope rules:
     - admin           → ``{'all': True}`` (frontend lists every session)
-    - tenant_admin    → union of sessions owned by any member of own tenant
-    - member / legacy → only sessions owned by self
+    - tenant_admin / member / legacy → only sessions owned by self
     """
     if user.role == "admin":
         return {"all": True}
 
-    from webui_helpers import _tenant_members_key
+    # Non-admin users see only their own sessions. tenant_admin no longer sees
+    # other members' sessions — this matches the expectation that runtime data
+    # (sessions/schedules) is personal, not tenant-shared.
     prefix = f"{agent_id}:"
-
-    if user.role == "tenant_admin" and user.tenant_id:
-        # Tenant admin sees every member's sessions within the tenant.
-        member_ids = _r().smembers(_tenant_members_key(user.tenant_id))
-        ids: list[str] = []
-        for mid in member_ids:
-            for entry in _r().smembers(_session_key(mid)):
-                if entry.startswith(prefix):
-                    ids.append(entry.split(":", 1)[1])
-        return {"session_ids": ids}
-
-    # Member or legacy user: own sessions only.
     owned: set = _r().smembers(_session_key(user.id))
     ids = [entry.split(":", 1)[1] for entry in owned if entry.startswith(prefix)]
     return {"session_ids": ids}

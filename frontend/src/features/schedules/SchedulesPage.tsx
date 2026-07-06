@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '@/store/auth'
 import { schedulesApi } from '@/api/schedules'
 import { agentsApi } from '@/api/agents'
 import { webuiApi } from '@/api/webui'
+import { useScopedResources } from '@/hooks/useScopedResources'
 import { useForm } from 'react-hook-form'
 import { Play, Trash2 } from 'lucide-react'
 
@@ -38,16 +38,26 @@ export default function SchedulesPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const role = useAuthStore(s => s.role)
-  const boundAgentIds = useAuthStore(s => s.boundAgentIds)
+  const { allowsAgent, scopeLoaded } = useScopedResources()
   const [showAdd, setShowAdd] = useState(false)
   const [page, setPage] = useState(0)
-  const { data: schedules = [] } = useQuery({ queryKey: ['schedules'], queryFn: schedulesApi.list })
+  const { data: schedules = [] } = useQuery({
+    queryKey: ['schedules'],
+    queryFn: async () => {
+      // Fetch schedules + ownership scope together so non-admins only see
+      // their own (admin sees all). Schedules are creator-owned runtime data,
+      // same model as sessions.
+      const list = await schedulesApi.list()
+      const ownerInfo = await webuiApi.getMyScheduleIds().catch(() => ({ all: true }))
+      if ((ownerInfo as any).all) return list
+      const ids = new Set((ownerInfo as any).schedule_ids ?? [])
+      return (list as any[]).filter(s => ids.has(s.id))
+    },
+    enabled: scopeLoaded,
+  })
   const { data: agents = [] } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list })
   // Non-admins can only schedule agents they can access (mirrors SessionsPage).
-  const createableAgents: any[] = role === 'admin'
-    ? (agents as any[])
-    : (agents as any[]).filter(a => boundAgentIds.includes(a.id))
+  const createableAgents: any[] = (agents as any[]).filter(a => allowsAgent(a.id))
   const { register, handleSubmit, reset } = useForm({
     defaultValues: {
       agent_id: '',

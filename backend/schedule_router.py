@@ -11,7 +11,6 @@ from webui_helpers import (
     _get_json,
     _forward_auth_headers,
     _schedule_key,
-    _tenant_members_key,
 )
 
 router = APIRouter(prefix="/webui", tags=["webui"])
@@ -140,19 +139,13 @@ async def my_schedule_ids(user: UserInDB = Depends(current_user)):
 
     Schedules are creator-owned (same model as sessions):
     - admin        → ``{'all': True}`` (frontend lists every schedule)
-    - tenant_admin → union of schedules created by any member of own tenant
-    - member/legacy → only schedules created by self
+    - tenant_admin / member / legacy → only schedules created by self
     """
     if user.role == "admin":
         return {"all": True}
 
-    if user.role == "tenant_admin" and user.tenant_id:
-        member_ids = _r().smembers(_tenant_members_key(user.tenant_id))
-        ids: list[str] = []
-        for mid in member_ids:
-            ids.extend(_r().smembers(_schedule_key(mid)))
-        return {"schedule_ids": ids}
-
+    # Non-admin users see only their own schedules. Runtime data is personal,
+    # not tenant-shared — tenant_admin does not see other members' schedules.
     return {"schedule_ids": list(_r().smembers(_schedule_key(user.id)))}
 
 
@@ -160,11 +153,6 @@ def _schedule_visible_to(user: UserInDB, schedule_id: str) -> bool:
     """Whether ``user`` may access ``schedule_id`` under creator-ownership rules."""
     if user.role == "admin":
         return True
-    if user.role == "tenant_admin" and user.tenant_id:
-        for mid in _r().smembers(_tenant_members_key(user.tenant_id)):
-            if schedule_id in _r().smembers(_schedule_key(mid)):
-                return True
-        return False
     return schedule_id in _r().smembers(_schedule_key(user.id))
 
 

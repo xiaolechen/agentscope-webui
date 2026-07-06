@@ -5,25 +5,22 @@ import UsersTab from './UsersTab'
 import TenantsTab from './TenantsTab'
 import TenantViewTab from './TenantViewTab'
 
-// The platform/system tenant id. Members of this tenant are platform operators
-// who can create and configure other tenants (see require_platform_access).
-const PLATFORM_TENANT_ID = 'agentscope'
-
 type Tab = 'users' | 'tenants' | 'tenant'
 
-/** User management shell. Platform operators (members of the 'agentscope'
- *  tenant) get a "Tenants" tab to create/configure tenants; regular tenant
- *  admins get a read-only "My Tenant" tab to view their assigned resources.
- *  Everyone with the 'users' permission gets the "Users" tab. */
+/** User management shell. Platform admins (role='admin') get a "Tenants" tab
+ *  to create/configure tenants; tenant_admins get a read-only "My Tenant" tab
+ *  to view their assigned resources. Everyone with the 'users' permission gets
+ *  the "Users" tab. */
 export default function UsersPage() {
   const { t } = useTranslation()
-  const memberships = useAuthStore(s => s.memberships)
   const role = useAuthStore(s => s.role)
   const [tab, setTab] = useState<Tab>('users')
 
-  const isPlatformUser = memberships.some(m => m.tenant_id === PLATFORM_TENANT_ID)
-  // Regular tenant_admins (not platform operators) get a read-only tenant view.
-  const isRegularTenantAdmin = !isPlatformUser && role === 'tenant_admin'
+  // Base tab visibility on the active role, not membership, so an admin who
+  // has dropped into a regular tenant (role becomes tenant_admin) sees the
+  // tenant_admin view, not the platform Tenants tab.
+  const isPlatformUser = role === 'admin'
+  const isRegularTenantAdmin = role === 'tenant_admin'
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'users', label: t('users.tab.users') },

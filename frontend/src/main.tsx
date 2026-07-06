@@ -12,7 +12,11 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[unhandledrejection]', event.reason)
 })
 
-const queryClient = new QueryClient({
+// Exported so login/logout flows can clear stale cache when switching accounts.
+// Without this, a new login inherits the previous user's cached query results
+// (user lists, agents, etc.) until each query refetches — visible as a flash
+// of the prior user's data.
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 30_000 },
     mutations: {

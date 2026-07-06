@@ -195,6 +195,19 @@ async def update_user(user_id: str, req: UpdateUserRequest, caller: UserInDB = D
     if not user:
         raise HTTPException(404, "User not found")
 
+    # Regular members can only change their own password — nothing else.
+    if caller.role == "user":
+        if caller.id != user_id:
+            raise HTTPException(403, "Only administrators can edit users")
+        if req.role is not None or req.tenant_id is not None or req.bound_agent_ids is not None:
+            raise HTTPException(403, "You can only change your own password")
+        if not req.password:
+            raise HTTPException(400, "Password is required")
+        user = user.model_copy(update={"hashed_password": hash_password(req.password)})
+        save_user(user)
+        logger.info("caller=%s changed own password", caller.username)
+        return _user_public(user)
+
     # tenant_admin scope guard (admin skips).
     if caller.role != "admin":
         if caller.role != "tenant_admin" or not caller.tenant_id:
@@ -206,6 +219,11 @@ async def update_user(user_id: str, req: UpdateUserRequest, caller: UserInDB = D
             raise HTTPException(403, "Cannot move a user out of your tenant")
         if req.bound_agent_ids is not None:
             _check_bound_agents(caller, req.bound_agent_ids)
+        # A tenant_admin may not change their own role — only admins can
+        # promote/demote tenant admins, and a self-role-change could strip
+        # the caller's own management access mid-session.
+        if caller.id == user_id and req.role is not None and req.role != caller.role:
+            raise HTTPException(403, "Cannot change your own role")
 
     changed = list(req.model_dump(exclude_unset=True).keys())
     if req.password:
@@ -238,6 +256,10 @@ async def delete_user(user_id: str, caller: UserInDB = Depends(_users_feature)):
     user = get_user_by_id(user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    # No one may delete their own account — a self-delete would leave the
+    # caller's session dangling and lock them out mid-operation.
+    if caller.id == user_id:
+        raise HTTPException(403, "Cannot delete yourself")
     if caller.role != "admin":
         if caller.role != "tenant_admin" or not caller.tenant_id:
             raise HTTPException(403, "Only administrators can delete users")

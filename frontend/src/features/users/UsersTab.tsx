@@ -28,6 +28,7 @@ export default function UsersTab() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const role = useAuthStore(s => s.role)
+  const currentUserId = useAuthStore(s => s.userId)
   const [dialog, setDialog] = useState<UserRecord | 'create' | null>(null)
   const [selectedAgents, setSelectedAgents] = useState<string[]>([])
   const [page, setPage] = useState(0)
@@ -49,6 +50,16 @@ export default function UsersTab() {
   const isEditing = dialog && dialog !== 'create'
   const watchedRole = watch('role')
   const isAdmin = role === 'admin'
+  // Editing one's own record: a regular user may only change their password;
+  // a tenant_admin may not change their own role. isEditing already guarantees
+  // dialog is a UserRecord (not 'create' / null).
+  const isSelf = !!isEditing && !!currentUserId &&
+    (dialog as UserRecord | null)?.id === currentUserId
+  // Role field is mutable only by admins, or by tenant_admins editing someone
+  // other than themselves.
+  const canChangeRole = isAdmin || !isSelf
+  // A regular member editing themselves sees password only — no role picker.
+  const showRoleSelect = !(role === 'user' && isSelf)
 
   // Bound-agent picker candidates: admins see all agents; tenant_admins only
   // see their tenant's assigned_agents (others would be rejected on save).
@@ -102,7 +113,10 @@ export default function UsersTab() {
   })
   const updateMut = useMutation({
     mutationFn: (d: FormFields) => usersApi.update((dialog as UserRecord).id, {
-      role: d.role,
+      // A regular user editing themselves sends password only — the backend
+      // rejects any other field for role='user' on self. Role/tenant changes
+      // are admin/tenant_admin concerns.
+      ...(role === 'user' && isSelf ? {} : { role: d.role }),
       // bound_agent_ids is intentionally not sent on edit: resource assignment
       // for existing users is done via the per-member Resources dialog, and
       // admins don't manage agent bindings at all.
@@ -143,6 +157,13 @@ export default function UsersTab() {
       <div className="flex-1 overflow-y-auto p-6 space-y-2">
         {paged.map((user) => {
           const tn = tenantName(user.tenant_id)
+          const isSelfRow = user.id === currentUserId
+          // Edit: admins edit anyone; tenant_admins edit their tenant members;
+          // a regular member may edit only their own record (password only).
+          const canEditRow = isAdmin || role === 'tenant_admin' || isSelfRow
+          // Delete: admins/tenant_admins may delete others, never themselves;
+          // regular members cannot delete anyone.
+          const canDeleteRow = (isAdmin || role === 'tenant_admin') && !isSelfRow
           return (
             <div key={user.id} className="as-card as-card-hover flex items-center gap-3 p-4">
               <div className="flex-1 min-w-0">
@@ -169,8 +190,12 @@ export default function UsersTab() {
                     style={{ color: 'var(--as-ink-80)' }}
                   ><SlidersHorizontal size={13} /></button>
                 )}
-                <button onClick={() => openEdit(user)} className="as-btn as-btn-ghost" style={{ color: 'var(--as-primary)' }}><Pencil size={13} /></button>
-                <button onClick={() => { if (confirm(t('users.confirm.delete', { name: user.username }))) deleteMut.mutate(user.id) }} className="as-btn as-btn-danger"><Trash2 size={13} /></button>
+                {canEditRow && (
+                  <button onClick={() => openEdit(user)} className="as-btn as-btn-ghost" style={{ color: 'var(--as-primary)' }}><Pencil size={13} /></button>
+                )}
+                {canDeleteRow && (
+                  <button onClick={() => { if (confirm(t('users.confirm.delete', { name: user.username }))) deleteMut.mutate(user.id) }} className="as-btn as-btn-danger"><Trash2 size={13} /></button>
+                )}
               </div>
             </div>
           )
@@ -197,11 +222,13 @@ export default function UsersTab() {
             <form onSubmit={handleSubmit(d => isEditing ? updateMut.mutate(d) : createMut.mutate(d))} className="space-y-3">
               {!isEditing && <input {...register('username', { required: true })} placeholder={t('users.form.usernamePlaceholder')} className={inputCls} style={inputStyle} />}
               <input {...register('password')} type="password" placeholder={isEditing ? t('users.form.passwordPlaceholderEdit') : t('users.form.passwordPlaceholder')} className={inputCls} style={inputStyle} />
-              <select {...register('role')} className={inputCls} style={inputStyle}>
-                <option value="user">{t('users.form.roleUser')}</option>
-                <option value="tenant_admin">{t('users.form.roleTenantAdmin')}</option>
-                {isAdmin && <option value="admin">{t('users.form.roleAdmin')}</option>}
-              </select>
+              {showRoleSelect && (
+                <select {...register('role')} disabled={!canChangeRole} className={inputCls} style={inputStyle}>
+                  <option value="user">{t('users.form.roleUser')}</option>
+                  <option value="tenant_admin">{t('users.form.roleTenantAdmin')}</option>
+                  {isAdmin && <option value="admin">{t('users.form.roleAdmin')}</option>}
+                </select>
+              )}
               {isAdmin && watchedRole !== 'admin' && (
                 <div>
                   <label className="as-caption" style={{ display: 'block', fontWeight: 500, color: 'var(--as-ink-80)', marginBottom: '6px' }}>

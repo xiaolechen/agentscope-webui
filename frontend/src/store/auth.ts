@@ -93,6 +93,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   logout: () => {
     LS_KEYS.forEach(k => localStorage.removeItem(k))
+    // Clear user-specific localStorage so the next login doesn't inherit the
+    // previous account's pinned KB sessions, etc. Preferences (theme, language,
+    // nav collapse) are intentionally kept — they're not user-scoped data.
+    const toRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('kb-session:')) toRemove.push(key)
+    }
+    toRemove.forEach(k => localStorage.removeItem(k))
     set({
       token: null, role: null, userId: null, username: null,
       boundAgentIds: [], tenantId: null, memberships: [], menuPermissions: [],

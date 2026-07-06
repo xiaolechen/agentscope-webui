@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/auth'
+import { queryClient } from '@/main'
 import LangSwitcher from '@/components/LangSwitcher'
 
 const schema = z.object({
@@ -36,6 +37,9 @@ export default function LoginPage() {
       setBoundAgents(me.bound_agent_ids)
       setTenant(me.active_tenant_id ?? me.tenant_id, me.menu_permissions as any)
       setMemberships(me.memberships)
+      // Drop any React Query cache left over from a previous session so the
+      // new user never sees the prior account's user lists / menus / etc.
+      queryClient.clear()
       navigate('/chat')
     } catch {
       setError(t('login.error.invalidCredentials'))
